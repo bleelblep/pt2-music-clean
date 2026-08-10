@@ -8,8 +8,6 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Pebble%20Time%202%20(emery)%20%2B%20Android-orange)](#building)
 
-<img src="watchapp/shot-home.png" alt="dreamwave home screen on Pebble Time 2" width="240">
-
 **Bespoke UI**
 
 <p>
