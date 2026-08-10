@@ -8,18 +8,18 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Pebble%20Time%202%20(emery)%20%2B%20Android-orange)](#building)
 
-**Bespoke UI**
-
-<p>
-  <img src="watchapp/shot-bespoke-1.png" alt="dreamwave bespoke UI" width="180">
-  <img src="watchapp/shot-bespoke-2.png" alt="dreamwave bespoke UI" width="180">
-</p>
-
 **Stock UI**
 
 <p>
   <img src="watchapp/shot-stock-1.png" alt="dreamwave stock UI" width="180">
   <img src="watchapp/shot-stock-2.png" alt="dreamwave stock UI" width="180">
+</p>
+
+**Bespoke UI**
+
+<p>
+  <img src="watchapp/shot-bespoke-1.png" alt="dreamwave bespoke UI" width="180">
+  <img src="watchapp/shot-bespoke-2.png" alt="dreamwave bespoke UI" width="180">
 </p>
 
 **Now Playing** *(shared by both UIs)*
