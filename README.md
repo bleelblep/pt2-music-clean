@@ -15,7 +15,6 @@
 <p>
   <img src="watchapp/shot-bespoke-1.png" alt="dreamwave bespoke UI" width="180">
   <img src="watchapp/shot-bespoke-2.png" alt="dreamwave bespoke UI" width="180">
-  <img src="watchapp/shot-bespoke-3.png" alt="dreamwave bespoke UI" width="180">
 </p>
 
 **Stock UI**
@@ -23,6 +22,12 @@
 <p>
   <img src="watchapp/shot-stock-1.png" alt="dreamwave stock UI" width="180">
   <img src="watchapp/shot-stock-2.png" alt="dreamwave stock UI" width="180">
+</p>
+
+**Now Playing** *(shared by both UIs)*
+
+<p>
+  <img src="watchapp/shot-now-playing.png" alt="dreamwave now playing screen" width="180">
 </p>
 
 </div>
