@@ -80,10 +80,13 @@
 // audio streams to the watch over BLE (so the transfer does not contend with the audio
 // stream and fail), and a sharp 144x144 when audio is on the phone and the link is free.
 // The watch accepts either square size, records the received dimensions in
-// s_cover_art_w/h, and sizes the (heap) buffer for the largest.
+// s_cover_art_w/h, and sizes the (heap) buffer to exactly what the transfer declared.
 #define COVER_ART_LOW_DIM 64
 #define COVER_ART_HIGH_DIM 144
-#define COVER_ART_MAX_BYTES (COVER_ART_HIGH_DIM * COVER_ART_HIGH_DIM)
+// Silence tolerated between cover-art chunks before the transfer is written off. The
+// companion retries a failed chunk 5x at 100 ms and then restarts the whole payload
+// after 400 ms, so anything past ~2 s means it has stopped sending for good.
+#define COVER_ART_STALL_MS 2500
 
 typedef enum {
   ScreenHome,
@@ -265,9 +268,9 @@ static bool s_bridge_ready;
 // Last applied audio-route epoch; bumped on every locally initiated route change.
 // Persisted so a restart cannot roll the route back to a pre-change value.
 static int32_t s_route_epoch;
-// True once we have adopted the companion's playback screen at least once. The very
-// first state snapshot (cold launch / reconnect) may switch us to Playing/Paused;
-// afterwards snapshots must not hijack navigation while the user browses menus.
+// True once a state snapshot has been applied. Snapshots never choose the screen (see
+// EventStateSnapshot) - this only records that the companion's state has landed at
+// least once, so nothing reads a still-empty playback state as authoritative.
 static bool s_snapshot_applied;
 static bool s_stream_open;
 static int32_t s_expected_sequence;
@@ -298,7 +301,7 @@ static bool s_artwork_only;
 static int s_action_bar_page;
 // "More" popup on the now-playing screen. The playback controls were flattened so the
 // hardware buttons map directly (SELECT = play/pause, UP/DOWN = volume, long UP/DOWN =
-// next/prev). The less-frequent actions (shuffle, loop, favorite, output, new search,
+// prev/next). The less-frequent actions (shuffle, loop, favorite, output, new search,
 // queue) live in this small button-driven list, opened with a SELECT long-press: UP/DOWN
 // move the highlight, SELECT activates, BACK closes.
 static bool s_np_more_open;
@@ -313,7 +316,9 @@ static bool s_show_progress = true;
 static bool s_cache_enabled = true;
 static uint16_t s_cache_size_mb = 250;
 static bool s_cache_radio = true;
-static bool s_cover_art_background;
+// Defaults on: album art is the point of the now-playing screen, and the companion
+// ships the same default so a watch that has never pushed its settings still gets art.
+static bool s_cover_art_background = true;
 // Both default to the "highest quality" tier so anyone who never touches this
 // setting keeps today's always-highest-bitrate behavior.
 static bool s_watch_audio_quality = true;   // false = Efficient, true = Balanced
@@ -328,6 +333,16 @@ static bool s_cover_art_dark;
 static int s_cover_art_expected_sequence;
 static int s_cover_art_expected_bytes;
 static int s_cover_art_received_bytes;
+// Track the in-progress transfer belongs to, taken from the Start message. Cover art
+// is matched on *which track it is for* rather than on the stream generation: the
+// generation counter is bumped locally by next/previous/resume/route-toggle/back, and
+// a transfer that was in flight when that happened used to be discarded silently (the
+// companion would report every chunk delivered while the watch logged no completions).
+static char s_cover_art_video_id[TEXT_LENGTH];
+// Cleans up a transfer the companion started and then abandoned (a chunk it could not
+// deliver after its retries). Without this the watch sits with receiving=true holding a
+// part-filled heap buffer until some later Start happens to reclaim it.
+static AppTimer *s_cover_art_timeout;
 // Heap-allocated (not a static array): at 144x144 the buffer is ~20 KB, and the pbw
 // header encodes the app's static RAM footprint in a uint16 (max 65535 bytes), so a
 // static buffer this large overflows it. Allocated on demand while a cover is being
@@ -457,7 +472,15 @@ static void draw_info_icon(GContext *ctx, GPoint c, GColor color);
 
 static void clear_cover_art(void);
 
+static void cancel_cover_art_timeout(void) {
+  if (s_cover_art_timeout) {
+    app_timer_cancel(s_cover_art_timeout);
+    s_cover_art_timeout = NULL;
+  }
+}
+
 static void clear_cover_art(void) {
+  cancel_cover_art_timeout();
   s_cover_art_ready = false;
   s_cover_art_receiving = false;
   s_cover_art_w = 0;
@@ -467,10 +490,32 @@ static void clear_cover_art(void) {
   s_cover_art_expected_sequence = 0;
   s_cover_art_expected_bytes = 0;
   s_cover_art_received_bytes = 0;
+  s_cover_art_video_id[0] = '\0';
   if (s_cover_art_data) {
     free(s_cover_art_data);
     s_cover_art_data = NULL;
   }
+}
+
+// A transfer that stops mid-stream: the companion gave up on a chunk, or the link
+// dropped. Release the buffer rather than holding a useless partial image (and the
+// receiving flag, which would make the retry's chunks land on stale state).
+static void cover_art_timeout_cb(void *context) {
+  (void) context;
+  s_cover_art_timeout = NULL;
+  if (!s_cover_art_receiving) return;
+  APP_LOG(APP_LOG_LEVEL_WARNING,
+          "[CoverArt] transfer stalled at %d/%d bytes; discarding",
+          s_cover_art_received_bytes, s_cover_art_expected_bytes);
+  clear_cover_art();
+}
+
+// (Re)arms the stall watchdog. Called on Start and on every accepted chunk, so the
+// window is "silence since the last chunk", not "total transfer time" - a slow but
+// progressing transfer is never cut off.
+static void arm_cover_art_timeout(void) {
+  cancel_cover_art_timeout();
+  s_cover_art_timeout = app_timer_register(COVER_ART_STALL_MS, cover_art_timeout_cb, NULL);
 }
 
 // Averages the just-received cover art's luma (same weighting the phone-side encoder
@@ -811,6 +856,20 @@ static void scroll_reset(void) {
 static void set_screen(AppScreen screen) {
   AppScreen previous_screen = s_screen;
   bool changed = screen != s_screen;
+  // Hand the stock Home artwork's heap back the moment we leave Home, and let
+  // draw_home()'s ensure_home_background() reload it on the way in.
+  //
+  // The full-screen 200x228 background is an 8-bit bitmap: 45600 bytes out of a 77704
+  // byte heap. That left ~32 KB for everything else, and a 144x144 colour cover needs
+  // 20736 of them *contiguous* - on top of the MenuLayer, the overlay window and the
+  // mascot bitmaps. So the cover malloc failed and album art silently never appeared,
+  // but only on the stock UI: bespoke Home draws no artwork and already frees this
+  // bitmap, which is exactly why switching to bespoke made album art start working.
+  if (changed && screen != ScreenHome && s_home_background) {
+    gbitmap_destroy(s_home_background);
+    s_home_background = NULL;
+    s_home_background_variant = -1;
+  }
   if (s_animation_timer) {
     app_timer_cancel(s_animation_timer);
     s_animation_timer = NULL;
@@ -4237,11 +4296,33 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
     s_expected_sequence++;
     write_audio(audio->value->data, audio->length);
   } else if (command_tuple && command == EventCoverArtStart) {
-    if (generation != s_stream_generation) return;
     Tuple *width = dict_find(iterator, MSG_IMAGE_WIDTH);
     Tuple *height = dict_find(iterator, MSG_IMAGE_HEIGHT);
     Tuple *total = dict_find(iterator, MSG_IMAGE_TOTAL_BYTES);
     if (!width || !height || !total) return;
+    // Cover art is addressed by *track*, not by stream generation. Requiring an exact
+    // generation match (as this did) meant a cover the phone had begun sending moments
+    // before any local next/previous/resume/route-toggle/back was thrown away, even
+    // though it was the art for the track still on screen. That is the single biggest
+    // reason art "sometimes" arrived: the companion logged every chunk delivered while
+    // the watch logged no completions at all.
+    //
+    // The id alone cannot decide it either, because there is no ordering to rely on: on
+    // Next the phone sends the new cover and the new state snapshot at about the same
+    // moment, so at Start time s_now_playing may still name the *previous* track. So:
+    // an id we recognise is accepted outright, and an id we do not is accepted only if
+    // the sender is at least as current as we are - which is what distinguishes "art
+    // that has outrun its snapshot" from "art for a track we already left".
+    Tuple *video = dict_find(iterator, MESSAGE_KEY_VIDEO_ID);
+    char incoming_id[TEXT_LENGTH];
+    incoming_id[0] = '\0';
+    if (video) copy_tuple_text(incoming_id, sizeof(incoming_id), video);
+    bool id_matches_now_playing =
+        incoming_id[0] != '\0' && s_now_playing.video_id[0] != '\0' &&
+        strncmp(incoming_id, s_now_playing.video_id, TEXT_LENGTH) == 0;
+    // No videoId at all means an older companion (or the Symfonium backend, whose
+    // media id can be absent); those peers only support the generation gate.
+    if (!id_matches_now_playing && generation < s_stream_generation) return;
     int total_bytes = total->value->int32;
     int w = width->value->int32;
     int h = height->value->int32;
@@ -4254,18 +4335,44 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
       return;
     }
     clear_cover_art();
-    s_cover_art_data = malloc(COVER_ART_MAX_BYTES);
-    if (!s_cover_art_data) return;  // out of heap: leave cover art disabled for this track
+    // Exactly what this transfer needs, not the 20 KB worst case. A 64x64 mono cover is
+    // 512 bytes; asking for 20736 of a fragmented heap fails far more often than asking
+    // for what is actually required, and a failed malloc here silently means no art.
+    s_cover_art_data = malloc((size_t) total_bytes);
+    if (!s_cover_art_data) {
+      APP_LOG(APP_LOG_LEVEL_ERROR, "[CoverArt] out of heap for %d bytes", total_bytes);
+      return;  // out of heap: leave cover art disabled for this track
+    }
     s_cover_art_w = w;
     s_cover_art_h = h;
     s_cover_art_receiving = true;
     s_cover_art_color = total_bytes == color_bytes;
     s_cover_art_expected_bytes = total_bytes;
+    strncpy(s_cover_art_video_id, incoming_id, TEXT_LENGTH - 1);
+    s_cover_art_video_id[TEXT_LENGTH - 1] = '\0';
+    arm_cover_art_timeout();
   } else if (command_tuple && command == EventCoverArtChunk) {
-    if (generation != s_stream_generation || !s_cover_art_receiving) return;
+    if (!s_cover_art_receiving) return;
+    // A transfer opened for a named track is owned by that track until it finishes or
+    // stalls; only an anonymous one still answers to the generation counter. Re-gating
+    // every chunk on the generation is what let a mid-transfer button press silently
+    // truncate an image the watch had already committed a buffer to.
+    if (s_cover_art_video_id[0] == '\0' && generation < s_stream_generation) return;
     Tuple *sequence = dict_find(iterator, MSG_IMAGE_SEQUENCE);
     Tuple *data = dict_find(iterator, MSG_IMAGE_DATA);
-    if (!sequence || !data || sequence->value->int32 != s_cover_art_expected_sequence) {
+    if (!sequence || !data) {
+      clear_cover_art();
+      return;
+    }
+    int seq = sequence->value->int32;
+    if (seq != s_cover_art_expected_sequence) {
+      // A repeat of the chunk we just took is not corruption - it is the companion
+      // re-sending one whose ack it never saw. Dropping the whole transfer for that
+      // (as this used to) threw away the image over a message that arrived twice.
+      if (seq == s_cover_art_expected_sequence - 1) {
+        arm_cover_art_timeout();
+        return;
+      }
       clear_cover_art();
       return;
     }
@@ -4277,7 +4384,9 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
     memcpy(s_cover_art_data + s_cover_art_received_bytes, data->value->data, data->length);
     s_cover_art_received_bytes += (int) data->length;
     s_cover_art_expected_sequence++;
+    arm_cover_art_timeout();
     if (s_cover_art_received_bytes >= s_cover_art_expected_bytes) {
+      cancel_cover_art_timeout();
       s_cover_art_receiving = false;
       s_cover_art_ready = true;
       update_cover_art_brightness();
@@ -4401,6 +4510,20 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
       copy_tuple_text(s_now_playing.video_id, TEXT_LENGTH, video);
       copy_tuple_text(s_now_playing.title, TEXT_LENGTH, title);
       copy_tuple_text(s_now_playing.artist, TEXT_LENGTH, artist);
+      // The snapshot is the authority on which track we are on, so it is also what
+      // decides whether the cover we are holding still belongs. This is the other half
+      // of the relaxed acceptance in EventCoverArtStart: art that turns out to be
+      // tagged for a different track is dropped here rather than lingering over the new
+      // one. Only *finished* art is evicted - a transfer still arriving is left alone,
+      // because a snapshot that was already in flight can name the previous track and
+      // would otherwise truncate the very image it is about to be superseded by.
+      if (s_cover_art_ready &&
+          s_cover_art_video_id[0] != '\0' &&
+          s_now_playing.video_id[0] != '\0' &&
+          strncmp(s_cover_art_video_id, s_now_playing.video_id, TEXT_LENGTH) != 0) {
+        clear_cover_art();
+        layer_mark_dirty(s_canvas);
+      }
     }
     Tuple *favorite = dict_find(iterator, MESSAGE_KEY_IS_FAVORITE);
     s_current_favorite = favorite && favorite->value->int32 != 0;
@@ -4415,15 +4538,17 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
     s_playback_active = playback_state == PlaybackPlaying;
     if (s_phone_audio || playback_state != PlaybackPlaying) stop_audio();
 
-    // Only the FIRST snapshot (cold launch / reconnect) is allowed to jump us onto a
-    // playback screen. After that, snapshots keep the on-screen data fresh but must
-    // not steal navigation: they only change the screen while we are already on a
-    // playback screen (e.g. reacting to an external pause/resume/track change).
-    bool first_snapshot = !s_snapshot_applied;
+    // Snapshots never choose the screen; they only keep the screen we are already on
+    // in step. Opening the watchapp while the phone happens to be playing used to land
+    // straight on Now Playing, because the first snapshot after launch was allowed to
+    // navigate - so the app opened somewhere the user had not asked to go, and Home
+    // (which shows the now-playing hero perfectly well) was skipped entirely. Playback
+    // the user starts *from the watch* still gets there: play_selected() pushes
+    // ScreenBuffering itself, which is a playback screen, so the branch below applies.
     bool on_playback_screen = s_screen == ScreenPlaying || s_screen == ScreenPaused ||
                               s_screen == ScreenBuffering;
     s_snapshot_applied = true;
-    if (first_snapshot || on_playback_screen) {
+    if (on_playback_screen) {
       // Key off having a now-playing track, not s_result_count: playback started from
       // the phone (or any path that never filled the results array) left the screen
       // stuck on ScreenPlaying after a pause, so the play/pause toggle kept sending
@@ -5226,9 +5351,14 @@ static void up_long_click(ClickRecognizerRef recognizer, void *context) {
     return;
   }
   if (s_screen == ScreenPlaying || s_screen == ScreenPaused) {
-    // Long-press UP skips to the next track (ignored while the More popup is open).
+    // Long-press UP goes to the PREVIOUS track (ignored while the More popup is open).
+    //
+    // UP/DOWN used to be the other way round here, which put Now Playing at odds with
+    // every other screen in the app - UP steps a list toward earlier items everywhere
+    // else - and with the Pebble convention the stock Music app set: UP is previous,
+    // DOWN is next.
     if (s_np_more_open) return;
-    np_next();
+    np_previous();
   }
 }
 
@@ -5239,9 +5369,10 @@ static void down_long_click(ClickRecognizerRef recognizer, void *context) {
     return;
   }
   if (s_screen == ScreenPlaying || s_screen == ScreenPaused) {
-    // Long-press DOWN skips to the previous track (ignored while More is open).
+    // Long-press DOWN skips to the NEXT track (ignored while More is open). Pairs with
+    // up_long_click's previous - see the note there on why this order.
     if (s_np_more_open) return;
-    np_previous();
+    np_next();
   }
 }
 

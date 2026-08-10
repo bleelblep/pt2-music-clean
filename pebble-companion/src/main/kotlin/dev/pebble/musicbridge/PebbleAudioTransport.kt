@@ -109,14 +109,32 @@ internal class PebbleAudioTransport(
         sendingJob = null
     }
 
+    /**
+     * Tears the transport down. Every step is guarded, because this runs from
+     * Service.onDestroy and an exception escaping there kills the whole process.
+     *
+     * That is not hypothetical: DefaultPebbleSender.close() unbinds its connection to the
+     * Pebble app, and when that connection was never registered (or the framework already
+     * tore it down as part of the same shutdown) unbindService throws
+     * IllegalArgumentException: "Service not registered". Seen in logcat taking the
+     * process down from SymfoniumPlaybackService.onDestroy, which killed
+     * PebblePlaybackService, its MediaSession and its media notification along with it -
+     * the app then restarted with no session at all. Shutdown is best-effort by nature;
+     * nothing here is worth a crash.
+     */
     fun close() {
-        synchronized(channelLock) {
-            activeChannel?.close()
-            activeChannel = null
-        }
-        sendingJob?.cancel()
-        sendingJob = null
-        sender.close()
+        runCatching {
+            synchronized(channelLock) {
+                activeChannel?.close()
+                activeChannel = null
+            }
+        }.onFailure { Log.w("PT2Music", "Closing audio channel failed", it) }
+        runCatching {
+            sendingJob?.cancel()
+            sendingJob = null
+        }.onFailure { Log.w("PT2Music", "Cancelling send job failed", it) }
+        runCatching { sender.close() }
+            .onFailure { Log.w("PT2Music", "Closing Pebble sender failed", it) }
     }
 
     suspend fun sendEvent(command: Int, status: String? = null, generation: Int? = null) {
@@ -295,7 +313,22 @@ internal class PebbleAudioTransport(
         )
     }
 
-    suspend fun sendCoverArtStart(width: Int, height: Int, totalBytes: Int, generation: Int) {
+    /**
+     * Opens a cover transfer. Carries the videoId so the watch can accept the image on
+     * the strength of *which track it is for* rather than on an exact stream-generation
+     * match: the watch bumps its generation on next/previous/resume/route-toggle/back,
+     * and a cover already in flight when that happens was being discarded silently.
+     *
+     * Returns whether the watch took it - there is no point streaming 41 chunks at a
+     * watch that never saw the header.
+     */
+    suspend fun sendCoverArtStart(
+        width: Int,
+        height: Int,
+        totalBytes: Int,
+        generation: Int,
+        videoId: String,
+    ): Boolean =
         sendReliably(
             mapOf(
                 Protocol.keyCommand to PebbleDictionaryItem.Int32(Protocol.eventCoverArtStart),
@@ -303,9 +336,9 @@ internal class PebbleAudioTransport(
                 Protocol.keyImageHeight to PebbleDictionaryItem.Int32(height),
                 Protocol.keyImageTotalBytes to PebbleDictionaryItem.Int32(totalBytes),
                 Protocol.keyGeneration to PebbleDictionaryItem.Int32(generation),
+                Protocol.keyVideoId to PebbleDictionaryItem.Text(videoId),
             ),
         )
-    }
 
     suspend fun sendCoverArtChunk(chunk: ByteArray, sequence: Int, generation: Int): Boolean =
         sendReliably(
@@ -315,6 +348,7 @@ internal class PebbleAudioTransport(
                 Protocol.keyImageData to PebbleDictionaryItem.Bytes(chunk),
                 Protocol.keyGeneration to PebbleDictionaryItem.Int32(generation),
             ),
+            attempts = COVER_CHUNK_SEND_ATTEMPTS,
         )
 
     suspend fun sendCoverArtClear(generation: Int) {
@@ -365,6 +399,11 @@ internal class PebbleAudioTransport(
     private companion object {
         const val DEFAULT_SEND_ATTEMPTS = 3
         const val CHUNK_SEND_ATTEMPTS = 2
+        // Cover chunks are the opposite trade-off to audio chunks. A dropped audio chunk
+        // is a ~64 ms gap the listener may not even notice, so it is cheap to give up on;
+        // a dropped cover chunk forfeits the whole image and forces a restart from chunk
+        // zero, so it is worth pushing harder here.
+        const val COVER_CHUNK_SEND_ATTEMPTS = 5
         const val RETRY_DELAY_MS = 100L
         // Consecutive undeliverable audio chunks tolerated before concluding the
         // watch is unreachable and stopping the stream.

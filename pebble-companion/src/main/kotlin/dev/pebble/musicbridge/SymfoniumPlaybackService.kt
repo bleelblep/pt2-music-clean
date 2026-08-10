@@ -167,10 +167,16 @@ class SymfoniumPlaybackService : Service() {
 
     override fun onBind(intent: Intent?): IBinder = localBinder
 
+    /**
+     * Each step guarded independently, mirroring PebblePlaybackService.onDestroy. An
+     * exception escaping onDestroy takes down the entire process - including the other
+     * service's MediaSession and media notification - so shutdown never gets to throw.
+     */
     override fun onDestroy() {
-        transport.close()
+        runCatching { transport.close() }
+        runCatching { coverArtJob?.cancel() }
         if (browserDeferred.isCompleted) runCatching { browserDeferred.getCompleted().release() }
-        scope.cancel()
+        runCatching { scope.cancel() }
         super.onDestroy()
     }
 
@@ -478,7 +484,16 @@ class SymfoniumPlaybackService : Service() {
             // this was actually happening (confirmed via `pebble logs`: zero "[CoverArt]
             // complete" lines despite the phone reporting every chunk delivered).
             Log.i(TAG, "Sending artwork to watch: ${payload.size} bytes")
-            transport.sendCoverArtStart(COVER_ART_DIM, COVER_ART_DIM, payload.size, activeGeneration)
+            // The mediaId travels as the videoId here too (see sendStateSnapshot), so the
+            // watch can match the cover to the track it is for instead of relying on the
+            // generation counter this comment block describes.
+            transport.sendCoverArtStart(
+                COVER_ART_DIM,
+                COVER_ART_DIM,
+                payload.size,
+                activeGeneration,
+                browser.currentMediaItem?.mediaId.orEmpty(),
+            )
             var sequence = 0
             var offset = 0
             while (offset < payload.size) {

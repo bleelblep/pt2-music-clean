@@ -52,8 +52,10 @@ import io.rebble.pebblekit2.common.model.PebbleDictionary
 import io.rebble.pebblekit2.common.model.PebbleDictionaryItem
 import io.rebble.pebblekit2.common.model.ReceiveResult
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -88,6 +90,13 @@ class PebblePlaybackService : MediaSessionService() {
     private lateinit var transport: PebbleAudioTransport
     private lateinit var player: ExoPlayer
     private lateinit var mediaSession: MediaSession
+    // The tap target for every notification this service posts, media or placeholder.
+    // Held as a field so the placeholder and the watch-route notification can set it as
+    // their contentIntent too - both used to have none, so tapping them did nothing.
+    private lateinit var sessionActivity: PendingIntent
+    // Held rather than passed straight to setMediaNotificationProvider, so the
+    // placeholder notification can post on the same channel Media3 will use.
+    private lateinit var notificationProvider: RouteAwareNotificationProvider
     private lateinit var mediaCache: SimpleCache
     private lateinit var cacheDataSourceFactory: CacheDataSource.Factory
     // Used for tracks that must not touch the cache at all (caching off, or a radio
@@ -134,7 +143,9 @@ class PebblePlaybackService : MediaSessionService() {
     private var radioQueueActive = false
     private var radioQueueName: String? = null
     private var radioQueueSongs: List<String> = emptyList()
-    private var coverArtBackground = false
+    // Defaults on. Album art is the point of the now-playing screen, and the watch ships
+    // the same default, so a watch that has never synced its settings still gets covers.
+    private var coverArtBackground = true
     private var watchTheme = ThemeDefault
     // Both default to the "highest quality" tier so anyone who never touches the new
     // Advanced setting keeps the pre-existing always-highest-bitrate behavior.
@@ -143,14 +154,78 @@ class PebblePlaybackService : MediaSessionService() {
 
     // -- Phone UI state exposure ---------------------------------------------------
 
-    /** Memoised cover-art URL resolver. Both maybeSendCoverArt and the phone UI use it. */
-    private val artworkUrlCache = mutableMapOf<String, String?>()
+    /**
+     * Memoised cover-art URL resolver. Both maybeSendCoverArt and the phone UI use it.
+     *
+     * Concurrent by construction, and it has to be: DreamwaveViewModel resolves artwork
+     * for whole lists (queue, recents, favorites, playlists, recommendations) by
+     * launching one coroutine per videoId, so a plain HashMap here was being read and
+     * resized from several threads at once - which loses entries, and can throw or spin
+     * forever inside the map itself. That is the phone-side half of "album art is
+     * fragile": covers that simply never appeared for some rows.
+     *
+     * What is stored is the *unsized* CDN URL. Google's image CDN takes the size in the
+     * URL suffix, so every consumer derives the size it wants locally via
+     * asSquareThumbnail() rather than re-resolving. The watch used to skip this cache
+     * entirely just to ask for a different size, paying a full YouTube.queue round trip
+     * per cover while the audio stream was held waiting for it.
+     */
+    private val artworkUrlCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
-    suspend fun artworkUrlFor(videoId: String): String? {
-        if (artworkUrlCache.containsKey(videoId)) return artworkUrlCache[videoId]
-        val url = resolveCoverArtUrl(videoId)
-        artworkUrlCache[videoId] = url
-        return url
+    /**
+     * In-flight resolves, so N callers asking for the same track at the same moment
+     * (the queue and the now-playing hero routinely do) share one network round trip
+     * instead of racing N of them.
+     */
+    private val artworkResolves = java.util.concurrent.ConcurrentHashMap<String, Deferred<String?>>()
+
+    /** Resolved base URL for [videoId], or null. Cached; safe to call from anywhere. */
+    private suspend fun artworkBaseUrlFor(videoId: String): String? {
+        artworkUrlCache[videoId]?.let { return it }
+        val resolve = artworkResolves.computeIfAbsent(videoId) {
+            scope.async { runCatching { resolveCoverArtUrl(videoId) }.getOrNull() }
+        }
+        return try {
+            resolve.await()?.also { artworkUrlCache[videoId] = it }
+        } finally {
+            artworkResolves.remove(videoId, resolve)
+        }
+    }
+
+    /** The phone UI's variant: a sharp square sized for a phone screen. */
+    suspend fun artworkUrlFor(videoId: String): String? =
+        artworkBaseUrlFor(videoId)?.asSquareThumbnail(COVER_ART_SOURCE_SIZE)
+
+    /**
+     * Decoded artwork for the notification's large icon, kept as (url -> bitmap) for the
+     * one track that is playing.
+     *
+     * Media3's own provider gets its large icon from the session's BitmapLoader, but the
+     * watch-route notification is built by hand and had no artwork at all. Rather than
+     * reach into Media3's loader from a nested class, the same resolve that sets the
+     * artwork URI decodes it once and parks it here.
+     */
+    @Volatile private var notificationArtwork: Pair<String, android.graphics.Bitmap>? = null
+
+    /** Decodes [url] into [notificationArtwork], downsampled to a notification-sized icon. */
+    private suspend fun cacheNotificationArtwork(url: String) {
+        if (notificationArtwork?.first == url) return
+        val bitmap = withContext(Dispatchers.IO) {
+            runCatching {
+                val bytes = loadCoverBytes(url) ?: return@runCatching null
+                // Bounds pass first: a 720x720 JPEG decoded straight to a Bitmap is ~2 MB
+                // held for the lifetime of the track, for an icon the shade draws small.
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                val longest = maxOf(bounds.outWidth, bounds.outHeight)
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = generateSequence(1) { it * 2 }
+                        .first { longest / it <= NOTIFICATION_ARTWORK_DIM }
+                }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            }.getOrNull()
+        }
+        if (bitmap != null) notificationArtwork = url to bitmap
     }
 
     private val _uiState = MutableStateFlow(PlaybackUiState())
@@ -170,7 +245,7 @@ class PebblePlaybackService : MediaSessionService() {
             cacheEnabled = getBoolean(KEY_CACHE_ENABLED, true)
             cacheSizeMb = getInt(KEY_CACHE_SIZE_MB, DEFAULT_CACHE_SIZE_MB).coerceIn(MIN_CACHE_SIZE_MB, MAX_CACHE_SIZE_MB)
             loopMode = getInt(KEY_LOOP_MODE, LoopModeOff).coerceIn(LoopModeOff, LoopModeAll)
-            coverArtBackground = getBoolean(KEY_COVER_ART_BG, false)
+            coverArtBackground = getBoolean(KEY_COVER_ART_BG, true)
             watchTheme = getInt(KEY_THEME, ThemeDefault).coerceIn(ThemeTeal, ThemeMono)
             watchAudioQuality = getBoolean(KEY_WATCH_AUDIO_QUALITY, true)
             phoneAudioQuality = getBoolean(KEY_PHONE_AUDIO_QUALITY, true)
@@ -316,20 +391,51 @@ class PebblePlaybackService : MediaSessionService() {
         // at all. It is listed as required for the mobile media-control surface.
         // EXTRA_OPEN_PLAYER tells MainActivity to auto-expand the Now Playing sheet
         // when the user taps the system media notification.
-        val sessionActivity = PendingIntent.getActivity(
+        //
+        // FLAG_ACTIVITY_NEW_TASK is not optional here. SystemUI sends this PendingIntent
+        // from its own process, so the activity starts outside the context of any
+        // existing activity, and PendingIntent.getActivity documents NEW_TASK as required
+        // for exactly that case â€” without it the send is rejected and tapping the media
+        // control does nothing at all. SINGLE_TOP stays so the singleTask MainActivity
+        // gets onNewIntent (and therefore EXTRA_OPEN_PLAYER) instead of being recreated.
+        sessionActivity = PendingIntent.getActivity(
             this,
             0,
             Intent(this, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .putExtra(MainActivity.EXTRA_OPEN_PLAYER, true),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivity)
             .build()
-        // Full media notification on the phone route; a minimal status notice while
-        // audio is streamed to the watch (phone is muted there).
-        setMediaNotificationProvider(RouteAwareNotificationProvider(this) { phoneAudio })
+        // Hand the session to the service explicitly. MediaSessionService only manages
+        // (and posts a notification for) sessions it has been *added*, and the only other
+        // route to that is onGetSession(), which fires when a MediaController connects
+        // over the service's own binder. Nothing here ever does: the watch bridge binds
+        // with ACTION_LOCAL_BIND to get the local binder, and the phone UI talks to the
+        // service directly rather than through a controller. So the session was never
+        // added, MediaNotificationManager never ran, and Media3's notification - the one
+        // carrying transport actions and artwork - was never posted at all. What the shade
+        // showed was the bare placeholder from promoteToForeground(), which SystemUI does
+        // not turn into a media control: dumpsys had numPostedByApp=12 with
+        // numWithActions=0 and numWithLargeIcon=0, and MediaDataManager.mediaEntries held
+        // no entry for this package.
+        addSession(mediaSession)
+        // Full media notification on the phone route; a status notice carrying the same
+        // metadata while audio is streamed to the watch (phone is muted there).
+        notificationProvider = RouteAwareNotificationProvider(
+            context = this,
+            isPhoneRoute = { phoneAudio },
+            contentIntent = { if (::sessionActivity.isInitialized) sessionActivity else null },
+            artworkFor = { metadata ->
+                // Only hand back the bitmap that belongs to the metadata being rendered,
+                // so a slow decode never paints the previous track's cover over the new one.
+                val uri = metadata.artworkUri?.toString()
+                notificationArtwork?.takeIf { it.first == uri }?.second
+            },
+        )
+        setMediaNotificationProvider(notificationProvider)
     }
 
     private var serviceStarted = false
@@ -410,18 +516,7 @@ class PebblePlaybackService : MediaSessionService() {
 
     private var foregrounded = false
 
-    private fun ensureForegroundChannel() {
-        val manager = getSystemService(NotificationManager::class.java)
-        if (manager.getNotificationChannel(MEDIA_CHANNEL_ID) == null) {
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    MEDIA_CHANNEL_ID,
-                    "Playback",
-                    NotificationManager.IMPORTANCE_LOW,
-                ).apply { setShowBadge(false) },
-            )
-        }
-    }
+    private fun ensureForegroundChannel() = ensureChannel(this, notificationProvider.channelId)
 
     /**
      * Promotes the service to the foreground with a media notification.
@@ -449,16 +544,25 @@ class PebblePlaybackService : MediaSessionService() {
             val metadata = player.mediaMetadata
             val title = metadata.title?.toString() ?: activeTitle ?: "dreamwave"
             val artist = metadata.artist?.toString() ?: activeArtist
-            val notification = Notification.Builder(this, MEDIA_CHANNEL_ID)
+            val notification = Notification.Builder(this, notificationProvider.channelId)
                 .setContentTitle(title)
                 .setContentText(artist ?: if (phoneAudio) "Playing" else "Playing on watch")
                 .setSmallIcon(android.R.drawable.stat_sys_headset)
                 .setOngoing(true)
+                // This placeholder is the only posted notification for the window between
+                // startForeground() and Media3 swapping in its own, and it had no tap
+                // target at all - so a tap during that window did nothing.
+                .apply {
+                    if (::sessionActivity.isInitialized) setContentIntent(sessionActivity)
+                    val uri = metadata.artworkUri?.toString()
+                    notificationArtwork?.takeIf { it.first == uri }?.second?.let(::setLargeIcon)
+                }
                 // MediaStyle + the session token even on the placeholder. Media3 swaps
-                // its own notification in a moment later under the same id, but until
-                // it does this is the service's only posted notification — and a plain
-                // one gives the system nothing to build a media control from, so the
-                // app is simply absent from the control surface for that window.
+                // its own notification in a moment later under the same id *and the same
+                // channel*, so that is a clean replacement; until it does this is the
+                // service's only posted notification — and a plain one gives the system
+                // nothing to build a media control from, so the app is simply absent
+                // from the control surface for that window.
                 .setStyle(Notification.MediaStyle().setMediaSession(mediaSession.platformToken))
                 .build()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -879,15 +983,16 @@ class PebblePlaybackService : MediaSessionService() {
             }
             startTransport(generation)
         }
+        // Peeked from the memoised map rather than resolved here: awaiting a resolve
+        // would put a network round trip in front of playback starting. The phone UI
+        // resolves covers for the queue, so this is usually already warm; when it is
+        // not, the async fill-in below covers it.
+        val warmArtUrl = artworkUrlCache[videoId]?.asSquareThumbnail(COVER_ART_SOURCE_SIZE)
         val metadata = MediaMetadata.Builder()
             .setTitle(activeTitle ?: videoId)
             .apply {
                 activeArtist?.let(::setArtist)
-                // Peeked from the memoised map rather than resolved here: artworkUrlFor
-                // would put a network round trip in front of playback starting. The
-                // phone UI resolves covers for the queue, so this is usually already
-                // warm; when it is not, the control simply shows no art this once.
-                artworkUrlCache[videoId]?.let { setArtworkUri(Uri.parse(it)) }
+                warmArtUrl?.let { setArtworkUri(Uri.parse(it)) }
             }
             .build()
         val mediaItem = MediaItem.Builder()
@@ -911,20 +1016,27 @@ class PebblePlaybackService : MediaSessionService() {
         ensureStartedForPlayback()
         player.play()
 
+        // A fresh play always re-delivers the cover. The dedupe below is there to absorb
+        // the settings-resync storm *within* one track session; it used to fall out
+        // naturally because the key carried the stream generation, which a new play
+        // changed. Now that the key is just (track, dim, encoding), a track the watch has
+        // since dropped art for - Back out of playback calls clear_playing_track() - would
+        // otherwise be considered already delivered and never sent again. Re-sending is
+        // cheap: the encoded payload is on disk by this point.
+        deliveredCover = null
         maybeSendCoverArt(videoId, generation)
 
-        // Resolve the artwork URL asynchronously and update the media metadata so the
-        // system media notification shows album art. The artworkUrlCache peek above only
-        // hits when the phone UI previously resolved this track — for watch-initiated
-        // playback the cache is cold and the notification has no artwork. Doing it here
-        // (after play() has already started) doesn't block playback; Media3 re-reads
-        // the player's metadata and updates the notification when we replace the item.
-        if (artworkUrlCache[videoId] == null) {
-            scope.launch {
-                val artUrl = artworkUrlFor(videoId)
-                if (artUrl != null && activeVideoId == videoId) {
-                    val currentItem = player.currentMediaItem ?: return@launch
-                    if (currentItem.mediaId != videoId) return@launch
+        // Get artwork onto the media item and into the notification's large icon. When
+        // the URL was already warm the item carries it from the start and only the
+        // bitmap needs decoding; when it was not (watch-initiated playback, where the
+        // phone UI has never seen this track) the URL is resolved here, after play() has
+        // already started so nothing blocks on it, and swapped into the item. Media3
+        // re-reads the player's metadata when the item is replaced.
+        scope.launch {
+            val artUrl = warmArtUrl ?: artworkUrlFor(videoId) ?: return@launch
+            if (warmArtUrl == null && activeVideoId == videoId) {
+                val currentItem = player.currentMediaItem
+                if (currentItem != null && currentItem.mediaId == videoId) {
                     val updatedMetadata = currentItem.mediaMetadata.buildUpon()
                         .setArtworkUri(Uri.parse(artUrl))
                         .build()
@@ -934,6 +1046,10 @@ class PebblePlaybackService : MediaSessionService() {
                     player.replaceMediaItem(player.currentMediaItemIndex, updatedItem)
                 }
             }
+            cacheNotificationArtwork(artUrl)
+            // The notification is rebuilt from the new metadata; without this nudge it
+            // can keep showing the artless version until the next state change.
+            if (activeVideoId == videoId) refreshNotification()
         }
 
         // Explicitly download the full file so that playing a song reliably caches it,
@@ -1518,14 +1634,11 @@ class PebblePlaybackService : MediaSessionService() {
      * a prior search. Falls back to the video thumbnail for tracks YT Music doesn't recognize
      * (e.g. a PipePipe-only match).
      */
-    private suspend fun resolveCoverArtUrl(
-        videoId: String,
-        sourceSize: Int = COVER_ART_SOURCE_SIZE,
-    ): String? {
+    private suspend fun resolveCoverArtUrl(videoId: String): String? {
         val squareArt = runCatching {
             YouTube.queue(videoIds = listOf(videoId)).getOrNull()?.firstOrNull()?.thumbnail
         }.getOrNull()
-        if (!squareArt.isNullOrBlank()) return squareArt.asSquareThumbnail(sourceSize)
+        if (!squareArt.isNullOrBlank()) return squareArt
         return runCatching {
             YouTube.player(videoId = videoId, client = YouTubeClient.WEB)
                 .getOrNull()
@@ -1549,15 +1662,20 @@ class PebblePlaybackService : MediaSessionService() {
     }
 
     /**
-     * Identifies one cover transfer. Everything that changes the bytes on the wire is
-     * in here: the track, the dimension (which follows the audio route), the encoding
-     * (mono vs colour, which follows the theme) and the generation the watch is on.
+     * Identifies one cover transfer: the track, the dimension (which follows the audio
+     * route) and the encoding (mono vs colour).
+     *
+     * Deliberately *not* keyed on the stream generation. The watch bumps its generation
+     * on next/previous/resume/route-toggle/back, so including it here made the guard
+     * miss on every one of those - the same bytes for the same track were torn down and
+     * re-sent from chunk zero because the label had changed. The generation is a
+     * property of the messages, not of the image, so it is passed to the send calls
+     * instead.
      */
     private data class CoverTransfer(
         val videoId: String,
         val dim: Int,
         val mono: Boolean,
-        val generation: Int,
     )
 
     private var inFlightCover: CoverTransfer? = null
@@ -1586,7 +1704,7 @@ class PebblePlaybackService : MediaSessionService() {
         // is meant to be the record sleeve, and 1bpp dithering made it unrecognisable.
         // The watch still accepts mono payloads, so this is purely which one we send.
         val mono = false
-        val transfer = CoverTransfer(videoId, dim, mono, generation)
+        val transfer = CoverTransfer(videoId, dim, mono)
         if (coverArtBackground && (transfer == inFlightCover || transfer == deliveredCover)) {
             // A redundant re-sync. Release the play() hold in case this call came from
             // one â€” releaseAudioForCover just clears a flag, so it is safe either way.
@@ -1612,7 +1730,7 @@ class PebblePlaybackService : MediaSessionService() {
                         "PT2Music",
                         "Cover art cache hit: bytes=${cached.size}, dim=$dim, theme=$watchTheme, video=$videoId",
                     )
-                    if (sendCoverArtPayload(cached, dim, generation)) deliveredCover = transfer
+                    if (sendCoverArtPayload(cached, dim, generation, videoId)) deliveredCover = transfer
                     return@launch
                 }
                 // The watch asks for a much smaller source than the phone UI does.
@@ -1622,7 +1740,12 @@ class PebblePlaybackService : MediaSessionService() {
                 // across the gomobile boundary, all to produce 64 pixels. Asking the
                 // CDN for a modest square instead keeps the oversampling the encoder
                 // wants without the buffer that starves it.
-                val artUrl = resolveCoverArtUrl(videoId, COVER_ART_WATCH_SOURCE_SIZE)
+                //
+                // Goes through the shared memo (artworkBaseUrlFor) rather than resolving
+                // privately: the phone UI has very often just resolved this exact track,
+                // and a second YouTube.queue round trip here is spent inside the window
+                // where the watch's audio stream is held waiting for the cover.
+                val artUrl = artworkBaseUrlFor(videoId)?.asSquareThumbnail(COVER_ART_WATCH_SOURCE_SIZE)
                 if (artUrl.isNullOrBlank()) {
                     transport.sendCoverArtClear(generation)
                     return@launch
@@ -1639,7 +1762,7 @@ class PebblePlaybackService : MediaSessionService() {
                         "Cover art payload ready: bytes=${watchimagePayload.size}, dim=$dim, theme=$watchTheme, video=$videoId",
                     )
                     withContext(Dispatchers.IO) { writeCachedCover(videoId, dim, mono, watchimagePayload) }
-                    if (sendCoverArtPayload(watchimagePayload, dim, generation)) {
+                    if (sendCoverArtPayload(watchimagePayload, dim, generation, videoId)) {
                         deliveredCover = transfer
                     }
                     return@launch
@@ -1659,9 +1782,42 @@ class PebblePlaybackService : MediaSessionService() {
      * Streams an encoded cover payload to the watch in [COVER_ART_CHUNK_BYTES] chunks.
      * Returns whether every chunk went out â€” a partial stream leaves the watch with
      * nothing to draw, so it must not be recorded as delivered.
+     *
+     * The watch enforces strictly consecutive sequence numbers and drops the whole
+     * transfer on a gap, so there is no way to resume from the middle: a failed chunk
+     * means restarting from chunk zero. A 144x144 colour cover is 41 consecutive acked
+     * messages and a 64x64 is 8, so at the per-chunk success rate of a BLE link shared
+     * with an audio stream, one all-or-nothing attempt fails often enough to read as
+     * "album art is unreliable". Hence [COVER_SEND_ATTEMPTS] whole-payload attempts with
+     * a pause between them for the link to drain.
      */
-    private suspend fun sendCoverArtPayload(payload: ByteArray, dim: Int, generation: Int): Boolean {
-        transport.sendCoverArtStart(dim, dim, payload.size, generation)
+    private suspend fun sendCoverArtPayload(
+        payload: ByteArray,
+        dim: Int,
+        generation: Int,
+        videoId: String,
+    ): Boolean {
+        repeat(COVER_SEND_ATTEMPTS) { attempt ->
+            if (attempt > 0) {
+                Log.w("PT2Music", "Cover art transfer failed; retrying (${attempt + 1}/$COVER_SEND_ATTEMPTS)")
+                delay(COVER_RETRY_DELAY_MS)
+            }
+            if (sendCoverArtAttempt(payload, dim, generation, videoId)) return true
+        }
+        // Every attempt failed. Tell the watch to drop whatever partial transfer it is
+        // holding: without this it sits with a half-filled buffer and receiving=true,
+        // and the next Start is the only thing that ever frees it.
+        transport.sendCoverArtClear(generation)
+        return false
+    }
+
+    private suspend fun sendCoverArtAttempt(
+        payload: ByteArray,
+        dim: Int,
+        generation: Int,
+        videoId: String,
+    ): Boolean {
+        if (!transport.sendCoverArtStart(dim, dim, payload.size, generation, videoId)) return false
         var sequence = 0
         var offset = 0
         while (offset < payload.size) {
@@ -2320,6 +2476,12 @@ class PebblePlaybackService : MediaSessionService() {
         }
         val changed = wantsPhone != phoneAudio
         phoneAudio = wantsPhone
+        // Adopt the watch's generation unconditionally. The watch bumps its counter when
+        // it switches *to* the watch route, and this used to be picked up only inside the
+        // "player is actively playing" branch below - so toggling the route while paused
+        // (or idle) left the two sides permanently one apart, after which every cover-art
+        // and audio message we sent was discarded by the watch as stale.
+        if (generation > activeGeneration) activeGeneration = generation
         getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_PHONE_AUDIO, phoneAudio)
@@ -2337,8 +2499,7 @@ class PebblePlaybackService : MediaSessionService() {
                 player.playbackState != Player.STATE_IDLE &&
                 player.playbackState != Player.STATE_ENDED
             ) {
-                activeGeneration = generation
-                startTransport(generation)
+                startTransport(activeGeneration)
             }
             // Notification visibility depends on the route, so refresh it.
             refreshNotification()
@@ -2387,6 +2548,7 @@ class PebblePlaybackService : MediaSessionService() {
         runCatching { coverArtJob?.cancel() }
         runCatching { qualitySwapJob?.cancel() }
         runCatching { transport.close() }
+        runCatching { removeSession(mediaSession) }
         runCatching { mediaSession.release() }
         runCatching { player.release() }
         runCatching { mediaCache.release() }
@@ -2802,17 +2964,38 @@ class PebblePlaybackService : MediaSessionService() {
         // whichever notification we or Media3 post always replaces the previous one
         // (no duplicate/stacked notifications) and the system media controls key off it.
         private const val MEDIA_NOTIFICATION_ID = 1001
-        private const val WATCH_STATUS_CHANNEL_ID = "dreamwave_watch_status"
         private const val WATCH_STATUS_NOTIFICATION_ID = MEDIA_NOTIFICATION_ID
-        // Channel for the placeholder foreground notification we post ourselves to
-        // satisfy the startForeground() contract before Media3 swaps in its own.
-        private const val MEDIA_CHANNEL_ID = "dreamwave_playback"
+
+        /**
+         * Creates [channelId] if it does not exist yet. Media3 creates its own channel
+         * when it first posts, but the placeholder we post during the startForeground
+         * handshake gets there first - and a notification on a channel that does not
+         * exist is dropped by the system, which would leave the service foregrounded
+         * with nothing on the media control surface.
+         */
+        private fun ensureChannel(context: Context, channelId: String, name: String = "Playback") {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            if (manager.getNotificationChannel(channelId) != null) return
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    channelId,
+                    name,
+                    NotificationManager.IMPORTANCE_LOW,
+                ).apply { setShowBadge(false) },
+            )
+        }
         // Cover-art size is chosen by audio route: small (64) while streaming audio to the
         // watch, so the cover transfer does not contend with the audio stream over BLE and
         // fail; sharp (144) when audio is on the phone and the link is free.
         private const val COVER_ART_LOW_DIM = 64
         private const val COVER_ART_HIGH_DIM = 144
         private const val COVER_ART_CHUNK_BYTES = 512
+        // Whole-payload retries. A cover transfer cannot resume from the middle (the
+        // watch requires consecutive sequence numbers), so a single failed chunk costs
+        // the entire image; retrying the payload is the only recovery available.
+        private const val COVER_SEND_ATTEMPTS = 3
+        // Long enough for a congested BLE link to drain before trying the payload again.
+        private const val COVER_RETRY_DELAY_MS = 400L
         // Longest the watch audio stream is held waiting for the cover to transfer before
         // giving up and letting audio flow (safety net against a slow/failed cover fetch).
         private const val COVER_HOLD_TIMEOUT_MS = 3500L
@@ -2827,6 +3010,9 @@ class PebblePlaybackService : MediaSessionService() {
         // the PNG normalisation and the gomobile call all stay well inside the 3.5 s
         // the audio stream is held for. 720 is for Coil and the phone's screen only.
         private const val COVER_ART_WATCH_SOURCE_SIZE = 288
+        // Upper bound for the decoded notification large icon. Notification icons are
+        // drawn at a few hundred px at most; decoding the full 720 costs ~2 MB per track.
+        private const val NOTIFICATION_ARTWORK_DIM = 512
         private const val COVER_CACHE_DIR = "dreamwave_cover_cache"
         // Encoded payloads run from 512 B (64x64 mono) to ~20 KB (144x144 colour), so this
         // budget holds on the order of a thousand covers while staying negligible next to
@@ -2853,20 +3039,27 @@ class PebblePlaybackService : MediaSessionService() {
     private class RouteAwareNotificationProvider(
         private val context: Context,
         private val isPhoneRoute: () -> Boolean,
+        private val contentIntent: () -> PendingIntent?,
+        private val artworkFor: (MediaMetadata) -> android.graphics.Bitmap?,
     ) : MediaNotification.Provider {
         private val defaultProvider = DefaultMediaNotificationProvider.Builder(context).build()
 
+        /**
+         * The one channel every notification under [MEDIA_NOTIFICATION_ID] uses.
+         *
+         * Three different channels used to share that id: Media3's own for the phone
+         * route, a "watch status" channel for the watch route, and a third for the
+         * placeholder posted during the startForeground handshake. A notification's
+         * channel is fixed when it is first posted, so re-posting the same id on a
+         * different channel is not a clean replacement - it is the case behind the media
+         * control appearing for some plays and not others, and behind it disappearing on
+         * a route change. Taken from the default provider rather than hardcoded so it
+         * stays whatever Media3 would have used.
+         */
+        val channelId: String get() = defaultProvider.notificationChannelInfo.id
+
         init {
-            val manager = context.getSystemService(NotificationManager::class.java)
-            if (manager.getNotificationChannel(WATCH_STATUS_CHANNEL_ID) == null) {
-                manager.createNotificationChannel(
-                    NotificationChannel(
-                        WATCH_STATUS_CHANNEL_ID,
-                        "Watch playback",
-                        NotificationManager.IMPORTANCE_LOW,
-                    ).apply { setShowBadge(false) },
-                )
-            }
+            ensureChannel(context, channelId, defaultProvider.notificationChannelInfo.name)
         }
 
         override fun createNotification(
@@ -2882,6 +3075,13 @@ class PebblePlaybackService : MediaSessionService() {
             }
             val metadata = mediaSession.player.mediaMetadata
             val title = metadata.title?.toString() ?: "Playing on watch"
+            // The artist, not a route label. This notification used to put "Playing on
+            // watch" in the content text, which is where every media surface reads the
+            // artist from - so the artist line rendered as a status string, and on the
+            // surfaces that fall back to the notification (rather than the session) it
+            // was simply the wrong text.
+            val artist = metadata.artist?.toString()
+                ?: metadata.albumArtist?.toString()
             val isPlaying = mediaSession.player.isPlaying
             // createMediaActionPendingIntent returns a plain platform PendingIntent, unlike
             // createMediaAction (which returns an androidx.core NotificationCompat.Action
@@ -2893,11 +3093,25 @@ class PebblePlaybackService : MediaSessionService() {
             // MediaStyle + the platform session token is what makes Pause/Stop (and the
             // system's own media controls, e.g. lock screen) actually work here - the
             // previous version of this notification had neither, so it was inert.
-            val notification = Notification.Builder(context, WATCH_STATUS_CHANNEL_ID)
+            val notification = Notification.Builder(context, channelId)
                 .setContentTitle(title)
-                .setContentText("Playing on watch")
+                .setContentText(artist ?: "Playing on watch")
+                // Where the route actually belongs: a subtext line, not the artist slot.
+                .setSubText("Playing on watch")
                 .setSmallIcon(android.R.drawable.stat_sys_headset)
                 .setOngoing(true)
+                // Tapping this used to do nothing whatsoever - it had no contentIntent.
+                // Media3's own provider always sets the session activity here; matching
+                // that is what makes the notification (and the surfaces that mirror it)
+                // open the app.
+                .apply {
+                    contentIntent()?.let(::setContentIntent)
+                    // The system media control reads artwork from the session, but the
+                    // notification in the shade reads its own large icon, and this one
+                    // never set one - so the art was blank on the watch route however
+                    // well the cover had resolved.
+                    artworkFor(metadata)?.let(::setLargeIcon)
+                }
                 .setStyle(
                     Notification.MediaStyle()
                         .setMediaSession(mediaSession.platformToken)
