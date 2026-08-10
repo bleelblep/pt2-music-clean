@@ -24,6 +24,8 @@ gen/
 *.keystore
 .env
 local.properties
+# Release signing lives here, never in build.gradle.kts. See keystore.properties.example.
+keystore.properties
 
 # --- Pebble / waf ---
 # .lock-waf_* embeds a full environment dump (absolute paths, hostname, username).

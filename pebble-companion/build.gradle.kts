@@ -1,4 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+// Imported rather than written as java.util.Properties: inside the android { } block
+// `java` resolves to Gradle's own Java extension, not the JDK package.
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -40,6 +43,32 @@ android {
         buildConfig = false
         resValues = false
         compose = true
+    }
+
+    // Release signing is read from keystore.properties at the repo root, which is
+    // gitignored. Credentials must never be inlined here: this file is committed, and a
+    // password added to it is one `git add` away from being published. Copy
+    // keystore.properties.example to keystore.properties and fill it in; without that
+    // file the release build is simply left unsigned, so a clone still builds.
+    val keystoreProperties = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { file ->
+        Properties().apply { file.inputStream().use { load(it) } }
+    }
+
+    signingConfigs {
+        if (keystoreProperties != null) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.findByName("release")
+        }
     }
 }
 
