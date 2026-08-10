@@ -10,6 +10,21 @@
 
 <img src="watchapp/shot-home.png" alt="dreamwave home screen on Pebble Time 2" width="240">
 
+**Bespoke UI**
+
+<p>
+  <img src="watchapp/shot-bespoke-1.png" alt="dreamwave bespoke UI" width="180">
+  <img src="watchapp/shot-bespoke-2.png" alt="dreamwave bespoke UI" width="180">
+  <img src="watchapp/shot-bespoke-3.png" alt="dreamwave bespoke UI" width="180">
+</p>
+
+**Stock UI**
+
+<p>
+  <img src="watchapp/shot-stock-1.png" alt="dreamwave stock UI" width="180">
+  <img src="watchapp/shot-stock-2.png" alt="dreamwave stock UI" width="180">
+</p>
+
 </div>
 
 ## How it works
