@@ -1,0 +1,133 @@
+[
+  {
+    "type": "heading",
+    "defaultValue": "Dreamwave"
+  },
+  {
+    "type": "text",
+    "defaultValue": "Advanced defaults for the Dreamwave watchapp. Playback controls remain available on the watch."
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Playback"
+      },
+      {
+        "type": "select",
+        "messageKey": "CONFIG_AUDIO_ROUTE",
+        "label": "Default output",
+        "defaultValue": "0",
+        "options": [
+          {"label": "Watch", "value": "0"},
+          {"label": "Phone", "value": "1"}
+        ]
+      },
+      {
+        "type": "slider",
+        "messageKey": "CONFIG_WATCH_VOLUME",
+        "label": "Watch volume",
+        "defaultValue": 50,
+        "min": 0,
+        "max": 100,
+        "step": 10
+      },
+      {
+        "type": "slider",
+        "messageKey": "CONFIG_PHONE_VOLUME",
+        "label": "Phone volume",
+        "defaultValue": 50,
+        "min": 0,
+        "max": 100,
+        "step": 10
+      },
+      {
+        "type": "select",
+        "messageKey": "CONFIG_WATCH_AUDIO_QUALITY",
+        "label": "Watch stream quality",
+        "defaultValue": "1",
+        "options": [
+          {"label": "Efficient", "value": "0"},
+          {"label": "Balanced", "value": "1"}
+        ]
+      },
+      {
+        "type": "select",
+        "messageKey": "CONFIG_PHONE_AUDIO_QUALITY",
+        "label": "Phone stream quality",
+        "defaultValue": "1",
+        "options": [
+          {"label": "Data Saver", "value": "0"},
+          {"label": "High", "value": "1"}
+        ]
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Search"
+      },
+      {
+        "type": "select",
+        "messageKey": "CONFIG_INPUT_MODE",
+        "label": "Default input",
+        "defaultValue": "0",
+        "options": [
+          {"label": "Voice", "value": "0"},
+          {"label": "Keyboard", "value": "1"},
+          {"label": "Ask every time", "value": "2"}
+        ]
+      },
+      {
+        "type": "toggle",
+        "messageKey": "CONFIG_SHOW_PROGRESS",
+        "label": "Show progress bar",
+        "defaultValue": true
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Cache"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "CONFIG_CACHE_ENABLED",
+        "label": "Enable caching",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "messageKey": "CONFIG_CACHE_RADIO",
+        "label": "Cache Artist Radio tracks",
+        "defaultValue": true
+      },
+      {
+        "type": "slider",
+        "messageKey": "CONFIG_CACHE_SIZE_MB",
+        "label": "Cache size (MB)",
+        "defaultValue": 250,
+        "min": 100,
+        "max": 1000,
+        "step": 50
+      },
+      {
+        "type": "toggle",
+        "messageKey": "CONFIG_COVER_ART_BG",
+        "label": "Cover art background",
+        "defaultValue": false
+      }
+    ]
+  },
+  {
+    "type": "submit",
+    "defaultValue": "Save settings"
+  }
+]

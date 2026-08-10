@@ -1,0 +1,58 @@
+# --- Build output ---
+build/
+.gradle/
+.kotlin
+.cxx/
+.externalNativeBuild
+out/
+bin/
+gen/
+
+# --- Android artifacts ---
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+# watchimagebridge.aar is a checked-in build input (built from watchimage-bridge/),
+# so it must survive the *.aar rule above.
+*.aar
+!pebble-companion/libs/watchimagebridge.aar
+
+# --- Keystores / secrets ---
+*.jks
+*.keystore
+.env
+local.properties
+
+# --- Pebble / waf ---
+# .lock-waf_* embeds a full environment dump (absolute paths, hostname, username).
+# Never commit it.
+.lock-waf_*
+node_modules/
+*.pbw
+
+# --- Go / gomobile ---
+watchimage-bridge/*.aar
+watchimage-bridge/*.jar
+
+# --- Scratch ---
+.tmp_*
+*.log
+*.bak
+core
+core.*
+
+# --- Editors / tooling ---
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# --- Agent tooling ---
+.claude
+.antigravity*
+.gemini
+.opencode
+.cursor*
+.codeium

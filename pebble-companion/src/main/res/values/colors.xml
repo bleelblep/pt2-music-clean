@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Cold-start window background only; the live colours come from the generated
+      scheme at runtime. These are PixelPlayer's base surfaces (Color.kt), which
+      are the closest fixed value to whatever the accent seed resolves to.
+    -->
+    <color name="window_background">#FFF7F2FF</color>
+</resources>

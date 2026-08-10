@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">dreamwave</string>
+
+    <!-- Common -->
+    <string name="common_back">Back</string>
+    <string name="common_close">Close</string>
+    <string name="common_ok">OK</string>
+    <string name="common_undo">Undo</string>
+    <string name="common_settings">Settings</string>
+
+    <!-- Top bar -->
+    <string name="topbar_beta_letter">B</string>
+    <string name="topbar_beta_label">eta</string>
+    <string name="topbar_cd_changelog">Changelog</string>
+    <string name="topbar_cd_cloud_streaming">Cloud streaming</string>
+
+    <!-- Offline -->
+    <string name="no_internet_dialog_title">No internet connection</string>
+    <string name="no_internet_dialog_message">Check your connection and try again.</string>
+    <string name="offline_screen_title">You\'re offline</string>
+    <string name="offline_screen_message">Connect to the internet to browse and play music.</string>
+    <string name="auth_web_retry_action">Retry</string>
+
+    <!-- Library selection -->
+    <string name="library_selection_all">Select all</string>
+    <string name="library_selection_deselect">Deselect</string>
+    <string name="library_selection_more_options">More options</string>
+
+    <!-- Playlist -->
+    <string name="playlist_dismissed_message">Playlist dismissed</string>
+
+    <!-- PixelPlayer full player (vendored; MIT-era resource names, see pixelplay/VENDORING.md) -->
+    <string name="artist_picker_count_multiple">%1$d artists</string>
+    <string name="artist_picker_count_single">1 artist</string>
+    <string name="artist_picker_primary_label">Primary artist</string>
+    <string name="artist_picker_shortcut_label">Artist page</string>
+    <string name="artist_picker_title">Pick an Artist</string>
+    <string name="presentation_batch_g_player_cd_bluetooth">Bluetooth</string>
+    <string name="presentation_batch_g_player_cd_cast">Cast</string>
+    <string name="presentation_batch_g_player_cd_cloud_stream">Cloud stream</string>
+    <string name="presentation_batch_g_player_cd_collapse">Collapse player</string>
+    <string name="presentation_batch_g_player_cd_local_playback">Local playback</string>
+    <string name="presentation_batch_g_player_cd_lyrics">Lyrics</string>
+    <string name="presentation_batch_g_player_cd_queue">Queue</string>
+    <string name="presentation_batch_g_player_connecting">Connecting.</string>
+    <!-- Referenced by the vendored player but not defined in upstream's app resources;
+         we define it ourselves. -->
+    <string name="setcat_now_playing">Now Playing</string>
+
+</resources>

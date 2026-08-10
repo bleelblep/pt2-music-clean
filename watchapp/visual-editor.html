@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dreamwave Visual Editor</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #111015;
+      --panel: #1b191f;
+      --panel-light: #242128;
+      --line: #39343e;
+      --ink: #f8f2f6;
+      --muted: #a59ca7;
+      --hot: #ff4b9b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 30% -20%, #4a1934 0, transparent 34rem), var(--page);
+      color: var(--ink);
+      font: 14px/1.4 "Segoe UI", Arial, sans-serif;
+    }
+    button, select, input, textarea { font: inherit; }
+    button, select, input[type="number"] {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-light);
+      color: var(--ink);
+    }
+    button { padding: 8px 11px; cursor: pointer; font-weight: 700; }
+    button:hover { border-color: #716675; }
+    button.primary { border-color: var(--hot); background: var(--hot); color: #240513; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--line);
+      background: #111015d9;
+      backdrop-filter: blur(12px);
+    }
+    h1 { margin: 0; font-size: 18px; letter-spacing: -.02em; }
+    header p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+    .header-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    main {
+      display: grid;
+      grid-template-columns: minmax(210px, 270px) minmax(400px, 1fr) minmax(240px, 300px);
+      min-height: calc(100vh - 70px);
+    }
+    aside { padding: 18px; background: var(--panel); }
+    .left { border-right: 1px solid var(--line); }
+    .right { border-left: 1px solid var(--line); }
+    h2 {
+      margin: 22px 0 9px;
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    h2:first-child { margin-top: 0; }
+    .field { display: grid; gap: 5px; margin-bottom: 10px; }
+    .field > label { color: var(--muted); font-size: 11px; }
+    select, input[type="number"] { width: 100%; height: 34px; padding: 0 8px; }
+    .screen-list { display: grid; gap: 5px; }
+    .screen-list button { text-align: left; color: var(--muted); }
+    .screen-list button.active { border-color: var(--hot); background: #3b1d2d; color: white; }
+    .palette { display: grid; gap: 8px; }
+    .color-field { display: grid; grid-template-columns: 34px 1fr; gap: 8px; align-items: center; }
+    .color-field input { width: 34px; height: 30px; padding: 1px; border: 0; background: transparent; }
+    .color-field label { color: var(--muted); font-size: 12px; text-transform: capitalize; }
+    .workspace {
+      display: grid;
+      place-items: center;
+      overflow: auto;
+      padding: 32px;
+      background-color: #151319;
+      background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    .watch {
+      position: relative;
+      width: 288px;
+      height: 348px;
+      padding: 35px 44px 85px;
+      border-radius: 44px;
+      background: linear-gradient(145deg, #69636b, #252329 35%, #09090b 78%);
+      box-shadow: 0 35px 70px #000a, inset 0 1px 2px #fff8;
+    }
+    .watch::before, .watch::after {
+      content: "";
+      position: absolute;
+      right: -9px;
+      width: 9px;
+      border-radius: 0 5px 5px 0;
+      background: #38343b;
+    }
+    .watch::before { top: 70px; height: 45px; }
+    .watch::after { top: 136px; height: 82px; }
+    #screen {
+      display: block;
+      width: 200px;
+      height: 228px;
+      overflow: visible;
+      background: #000;
+      box-shadow: 0 0 0 3px #050506, 0 0 18px #000;
+      touch-action: none;
+      user-select: none;
+    }
+    .element { cursor: move; }
+    .element text { pointer-events: none; }
+    .selection {
+      fill: none;
+      stroke: #00eaff;
+      stroke-width: 1;
+      vector-effect: non-scaling-stroke;
+      stroke-dasharray: 3 2;
+      pointer-events: none;
+    }
+    .handle {
+      fill: #00eaff;
+      stroke: #071b20;
+      stroke-width: 1;
+      vector-effect: non-scaling-stroke;
+      cursor: nwse-resize;
+    }
+    .coords {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 37px;
+      color: #938d96;
+      font: 11px/1 Consolas, monospace;
+      text-align: center;
+    }
+    .property-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .property-grid .field { margin: 0; }
+    .selected-name { min-height: 20px; margin-bottom: 10px; font-weight: 800; }
+    .muted { color: var(--muted); }
+    .tips { padding-left: 17px; color: var(--muted); font-size: 12px; }
+    .tips li { margin: 7px 0; }
+    dialog {
+      width: min(680px, calc(100vw - 32px));
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0;
+      background: var(--panel);
+      color: var(--ink);
+      box-shadow: 0 30px 90px #000c;
+    }
+    dialog::backdrop { background: #08070ab8; backdrop-filter: blur(3px); }
+    .dialog-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    .dialog-head strong { font-size: 16px; }
+    textarea {
+      display: block;
+      width: calc(100% - 32px);
+      height: 390px;
+      margin: 16px;
+      padding: 12px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0d0c10;
+      color: #d9fbd8;
+      font: 12px/1.5 Consolas, monospace;
+    }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 16px 16px; }
+    @media (max-width: 920px) {
+      main { grid-template-columns: 210px 1fr; }
+      .right { grid-column: 1 / -1; border: 1px solid var(--line); }
+    }
+    @media (max-width: 640px) {
+      header { align-items: flex-start; flex-direction: column; }
+      main { display: block; }
+      .left, .right { border: 0; border-bottom: 1px solid var(--line); }
+      .screen-list { grid-template-columns: repeat(2, 1fr); }
+      .workspace { min-height: 430px; padding: 24px 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>dreamwave Visual Editor</h1>
+      <p>Drag the actual Emery 200 x 228 layout, then export C coordinates.</p>
+    </div>
+    <div class="header-actions">
+      <button id="resetScreen">Reset screen</button>
+      <button id="resetAll">Reset all</button>
+      <button class="primary" id="exportButton">Export C values</button>
+    </div>
+  </header>
+  <main>
+    <aside class="left">
+      <h2>Preview</h2>
+      <div class="field">
+        <label for="themeSelect">Theme</label>
+        <select id="themeSelect">
+          <option value="dreamhouse">Dreamhouse</option>
+          <option value="ticket">Ticket</option>
+        </select>
+      </div>
+      <h2>Screens</h2>
+      <div class="screen-list" id="screenList"></div>
+      <h2>Theme Colors</h2>
+      <div class="palette" id="palette"></div>
+    </aside>
+
+    <section class="workspace">
+      <div class="watch">
+        <svg id="screen" viewBox="0 0 200 228" aria-label="Editable watch screen"></svg>
+        <div class="coords" id="coords">200 x 228 px</div>
+      </div>
+    </section>
+
+    <aside class="right">
+      <h2>Selected Element</h2>
+      <div class="selected-name muted" id="selectedName">Click an element on the watch</div>
+      <div class="property-grid">
+        <div class="field"><label for="propX">X</label><input id="propX" type="number"></div>
+        <div class="field"><label for="propY">Y</label><input id="propY" type="number"></div>
+        <div class="field"><label for="propW">Width</label><input id="propW" type="number" min="1"></div>
+        <div class="field"><label for="propH">Height</label><input id="propH" type="number" min="1"></div>
+      </div>
+      <h2>How To Use</h2>
+      <ul class="tips">
+        <li>Drag any outlined UI element.</li>
+        <li>Drag the cyan corner to resize it.</li>
+        <li>Arrow keys move by 1 px; hold Shift for 5 px.</li>
+        <li>Colors and positions save automatically in this browser.</li>
+        <li>Export values and apply the desired ones to <code>src/c/main.c</code>.</li>
+      </ul>
+    </aside>
+  </main>
+
+  <dialog id="exportDialog">
+    <div class="dialog-head"><strong>Layout values for main.c</strong><button id="closeDialog">Close</button></div>
+    <textarea id="exportText" spellcheck="false"></textarea>
+    <div class="dialog-actions"><button class="primary" id="copyExport">Copy to clipboard</button></div>
+  </dialog>
+
+  <script>
+    const NS = 'http://www.w3.org/2000/svg';
+    const STORAGE_KEY = 'dreamwave-visual-editor-v1';
+    const screens = {
+      home: {
+        label: 'Home',
+        elements: [
+          ['header', 'Header', 0, 0, 200, 22, 'header', 'CONNECTED'],
+          ['title', 'App title', 10, 29, 180, 25, 'text', 'dreamwave', 18],
+          ['mic', 'Microphone', 65, 60, 70, 70, 'mic'],
+          ['prompt', 'Search prompt', 10, 136, 180, 25, 'text', 'Search music', 18],
+          ['action', 'Search button', 14, 172, 172, 37, 'button', 'START SEARCH'],
+          ['hint', 'Theme hint', 5, 213, 190, 12, 'text', 'HOLD SELECT TO SWITCH LOOK', 9]
+        ]
+      },
+      searching: {
+        label: 'Searching',
+        elements: [
+          ['header', 'Header', 0, 0, 200, 22, 'header', 'PHONE LINK'],
+          ['eyebrow', 'Search label', 10, 31, 180, 19, 'textSecondary', 'SEARCHING FOR', 14],
+          ['query', 'Query', 10, 52, 180, 70, 'textLeft', 'Midnight City by M83', 24],
+          ['loader', 'Loading bars', 43, 139, 112, 12, 'loader'],
+          ['status', 'Status', 10, 169, 180, 22, 'text', 'Android is finding audio', 14]
+        ]
+      },
+      results: {
+        label: 'Results',
+        elements: [
+          ['header', 'Header', 0, 0, 200, 22, 'header', 'SEARCH RESULTS'],
+          ['query', 'Query', 8, 25, 184, 20, 'textSecondary', 'Midnight City', 14],
+          ['row1', 'Result 1', 5, 46, 190, 33, 'resultSelected', '01|Midnight City|M83'],
+          ['row2', 'Result 2', 5, 81, 190, 33, 'result', '02|Wait|M83'],
+          ['row3', 'Result 3', 5, 116, 190, 33, 'result', '03|Outro|M83'],
+          ['row4', 'Result 4', 5, 151, 190, 33, 'result', '04|Sweet Disposition|The Temper Trap'],
+          ['row5', 'Result 5', 5, 186, 190, 33, 'result', '05|Genesis|Grimes']
+        ]
+      },
+      playing: {
+        label: 'Playing',
+        elements: [
+          ['header', 'Header', 0, 0, 200, 22, 'header', 'PLAYING'],
+          ['title', 'Song title', 10, 35, 180, 75, 'textLeft', 'Midnight City', 28],
+          ['artist', 'Artist', 10, 112, 180, 20, 'textSecondary', 'M83', 14],
+          ['progress', 'Progress bar', 10, 137, 180, 7, 'progress'],
+          ['times', 'Time labels', 10, 145, 180, 12, 'times', '1:24|4:03'],
+          ['state', 'Playback state', 9, 160, 182, 36, 'state', 'PLAYING / VOL 50%'],
+          ['hint', 'Control hint', 4, 209, 192, 12, 'text', 'SELECT: PAUSE  UP/DOWN: VOLUME', 9]
+        ]
+      },
+      paused: {
+        label: 'Paused',
+        elements: [
+          ['header', 'Header', 0, 0, 200, 22, 'header', 'PAUSED'],
+          ['title', 'Song title', 10, 35, 180, 75, 'textLeft', 'Midnight City', 28],
+          ['artist', 'Artist', 10, 112, 180, 20, 'textSecondary', 'M83', 14],
+          ['progress', 'Progress bar', 10, 137, 180, 7, 'progress'],
+          ['times', 'Time labels', 10, 145, 180, 12, 'times', '1:24|4:03'],
+          ['state', 'Playback state', 9, 160, 182, 36, 'state', 'PAUSED / VOL 50%'],
+          ['hint', 'Control hint', 4, 209, 192, 12, 'text', 'SELECT: PLAY  UP/DOWN: VOLUME', 9]
+        ]
+      },
+      error: {
+        label: 'Error',
+        elements: [
+          ['header', 'Header', 0, 0, 200, 22, 'header', 'STREAM ERROR'],
+          ['mark', 'Error mark', 68, 45, 64, 64, 'errorMark', '!'],
+          ['title', 'Error title', 10, 118, 180, 30, 'text', 'Audio stopped', 24],
+          ['status', 'Error detail', 18, 148, 164, 36, 'text', 'The phone connection was interrupted', 14],
+          ['retry', 'Retry button', 14, 190, 82, 30, 'button', 'RETRY'],
+          ['search', 'Search button', 104, 190, 82, 30, 'outlineButton', 'SEARCH']
+        ]
+      }
+    };
+    const defaultThemes = {
+      dreamhouse: { background: '#ffaaaa', foreground: '#aa0055', accent: '#ff0055', secondary: '#aa55aa', surface: '#ffffff' },
+      ticket: { background: '#000055', foreground: '#ffffaa', accent: '#ff00aa', secondary: '#ffaa00', surface: '#0000aa' }
+    };
+    const clone = value => JSON.parse(JSON.stringify(value));
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    const state = {
+      screen: saved.screen && screens[saved.screen] ? saved.screen : 'home',
+      theme: saved.theme && defaultThemes[saved.theme] ? saved.theme : 'dreamhouse',
+      themes: { ...clone(defaultThemes), ...(saved.themes || {}) },
+      layouts: saved.layouts || {},
+      selected: null
+    };
+    const svg = document.getElementById('screen');
+    const propertyInputs = ['propX', 'propY', 'propW', 'propH'].map(id => document.getElementById(id));
+    let interaction = null;
+
+    function save() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ screen: state.screen, theme: state.theme, themes: state.themes, layouts: state.layouts }));
+    }
+
+    function layoutFor(screenId = state.screen) {
+      if (!state.layouts[screenId]) {
+        state.layouts[screenId] = Object.fromEntries(screens[screenId].elements.map(item => [item[0], item.slice(2, 6)]));
+      }
+      return state.layouts[screenId];
+    }
+
+    function svgNode(name, attributes = {}) {
+      const node = document.createElementNS(NS, name);
+      Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value));
+      return node;
+    }
+
+    function addText(group, value, x, y, width, height, size, color, align = 'middle', weight = '700') {
+      const text = svgNode('text', {
+        x: align === 'start' ? x : align === 'end' ? x + width : x + width / 2,
+        y: y + Math.min(height - 2, size),
+        fill: color,
+        'font-family': 'Arial, sans-serif',
+        'font-size': size,
+        'font-weight': weight,
+        'text-anchor': align,
+        'dominant-baseline': 'auto'
+      });
+      text.textContent = value;
+      group.append(text);
+    }
+
+    function drawElement(item, rect, colors) {
+      const [id, label, , , , , type, content, fontSize] = item;
+      const [x, y, width, height] = rect;
+      const group = svgNode('g', { class: 'element', 'data-id': id, 'aria-label': label });
+      const box = (fill, radius = 0, stroke = 'none', strokeWidth = 0) => group.append(svgNode('rect', { x, y, width, height, rx: radius, fill, stroke, 'stroke-width': strokeWidth }));
+      if (type === 'header') {
+        box(state.theme === 'ticket' ? colors.secondary : colors.accent);
+        addText(group, content, x + 7, y + 1, width - 14, height - 2, 14, state.theme === 'ticket' ? colors.background : '#ffffff', 'start', '800');
+      } else if (type.startsWith('text')) {
+        const color = type === 'textSecondary' ? colors.secondary : colors.foreground;
+        addText(group, content, x, y, width, height, fontSize, color, type === 'textLeft' || type === 'textSecondary' ? 'start' : 'middle');
+      } else if (type === 'button' || type === 'outlineButton') {
+        const radius = state.theme === 'ticket' ? 0 : Math.min(height / 2, 18);
+        box(type === 'button' ? colors.accent : 'transparent', radius, colors.accent, type === 'outlineButton' ? 2 : 0);
+        addText(group, content, x, y + 3, width, height - 3, 14, type === 'button' ? '#ffffff' : colors.accent);
+      } else if (type === 'mic') {
+        box(state.theme === 'ticket' ? colors.accent : colors.surface, state.theme === 'ticket' ? 2 : width / 2);
+        const stroke = state.theme === 'ticket' ? '#ffffff' : colors.accent;
+        group.append(svgNode('rect', { x: x + width * .37, y: y + height * .22, width: width * .26, height: height * .43, rx: 9, fill: 'none', stroke, 'stroke-width': 4 }));
+        group.append(svgNode('path', { d: `M ${x + width * .27} ${y + height * .47} A ${width * .23} ${height * .23} 0 0 0 ${x + width * .73} ${y + height * .47}`, fill: 'none', stroke, 'stroke-width': 4 }));
+        group.append(svgNode('line', { x1: x + width / 2, y1: y + height * .72, x2: x + width / 2, y2: y + height * .86, stroke, 'stroke-width': 4 }));
+        group.append(svgNode('line', { x1: x + width * .37, y1: y + height * .86, x2: x + width * .63, y2: y + height * .86, stroke, 'stroke-width': 4 }));
+      } else if (type === 'loader') {
+        for (let i = 0; i < 7; i++) group.append(svgNode('rect', { x: x + i * width / 7 + 1, y, width: width / 7 - 6, height, fill: i < 4 ? colors.accent : colors.surface }));
+      } else if (type === 'result' || type === 'resultSelected') {
+        if (type === 'resultSelected') box(colors.accent, state.theme === 'ticket' ? 0 : 7);
+        const [index, title, artist] = content.split('|');
+        const textColor = type === 'resultSelected' ? '#ffffff' : colors.foreground;
+        addText(group, index, x + 4, y + 5, 24, 18, 14, type === 'resultSelected' ? '#ffffff' : colors.secondary);
+        addText(group, title, x + 31, y + 1, width - 37, 18, 14, textColor, 'start');
+        addText(group, artist, x + 31, y + 17, width - 37, 12, 9, textColor, 'start', '400');
+      } else if (type === 'progress') {
+        box(colors.surface);
+        group.append(svgNode('rect', { x, y, width: width * .35, height, fill: colors.accent }));
+      } else if (type === 'times') {
+        const [left, right] = content.split('|');
+        addText(group, left, x, y, width / 2, height, 9, colors.foreground, 'start', '400');
+        addText(group, right, x + width / 2, y, width / 2, height, 9, colors.foreground, 'end', '400');
+      } else if (type === 'state') {
+        box(state.theme === 'ticket' ? colors.secondary : colors.surface, state.theme === 'ticket' ? 0 : 13);
+        addText(group, content, x, y + 4, width, height - 4, 14, state.theme === 'ticket' ? colors.background : colors.accent);
+      } else if (type === 'errorMark') {
+        box(colors.surface, state.theme === 'ticket' ? 0 : width / 2);
+        addText(group, content, x, y + 1, width, height - 1, 42, colors.accent);
+      }
+      const hit = svgNode('rect', { x, y, width, height, fill: 'transparent', stroke: '#ffffff20', 'stroke-width': .5 });
+      group.prepend(hit);
+      return group;
+    }
+
+    function render() {
+      svg.replaceChildren();
+      const colors = state.themes[state.theme];
+      svg.append(svgNode('rect', { width: 200, height: 228, fill: colors.background }));
+      const layout = layoutFor();
+      screens[state.screen].elements.forEach(item => svg.append(drawElement(item, layout[item[0]], colors)));
+      if (state.selected && layout[state.selected]) {
+        const [x, y, width, height] = layout[state.selected];
+        svg.append(svgNode('rect', { class: 'selection', x, y, width, height }));
+        svg.append(svgNode('rect', { class: 'handle', 'data-handle': state.selected, x: x + width - 3, y: y + height - 3, width: 7, height: 7, rx: 1 }));
+      }
+      updateProperties();
+      save();
+    }
+
+    function updateProperties() {
+      const item = state.selected && screens[state.screen].elements.find(element => element[0] === state.selected);
+      document.getElementById('selectedName').textContent = item ? item[1] : 'Click an element on the watch';
+      document.getElementById('selectedName').classList.toggle('muted', !item);
+      const rect = item ? layoutFor()[state.selected] : ['', '', '', ''];
+      propertyInputs.forEach((input, index) => { input.value = rect[index]; input.disabled = !item; });
+      document.getElementById('coords').textContent = item ? `GRect(${rect.join(', ')})` : '200 x 228 px';
+    }
+
+    function renderControls() {
+      const list = document.getElementById('screenList');
+      list.replaceChildren(...Object.entries(screens).map(([id, screen]) => {
+        const button = document.createElement('button');
+        button.textContent = screen.label;
+        button.className = id === state.screen ? 'active' : '';
+        button.onclick = () => { state.screen = id; state.selected = null; renderControls(); render(); };
+        return button;
+      }));
+      document.getElementById('themeSelect').value = state.theme;
+      const palette = document.getElementById('palette');
+      palette.replaceChildren(...Object.keys(defaultThemes.dreamhouse).map(key => {
+        const row = document.createElement('div');
+        row.className = 'color-field';
+        const input = document.createElement('input');
+        input.type = 'color'; input.value = state.themes[state.theme][key];
+        input.oninput = () => { state.themes[state.theme][key] = input.value; render(); };
+        const label = document.createElement('label');
+        label.textContent = key;
+        row.append(input, label);
+        return row;
+      }));
+    }
+
+    function svgPoint(event) {
+      const point = svg.createSVGPoint();
+      point.x = event.clientX; point.y = event.clientY;
+      return point.matrixTransform(svg.getScreenCTM().inverse());
+    }
+
+    svg.addEventListener('pointerdown', event => {
+      const handle = event.target.closest('[data-handle]');
+      const element = event.target.closest('[data-id]');
+      const id = handle?.dataset.handle || element?.dataset.id;
+      if (!id) { state.selected = null; render(); return; }
+      state.selected = id;
+      const point = svgPoint(event);
+      interaction = { id, mode: handle ? 'resize' : 'move', start: point, rect: [...layoutFor()[id]] };
+      svg.setPointerCapture(event.pointerId);
+      render();
+    });
+
+    svg.addEventListener('pointermove', event => {
+      if (!interaction) return;
+      const point = svgPoint(event);
+      const dx = Math.round(point.x - interaction.start.x);
+      const dy = Math.round(point.y - interaction.start.y);
+      const [x, y, width, height] = interaction.rect;
+      layoutFor()[interaction.id] = interaction.mode === 'move'
+        ? [Math.max(0, Math.min(200 - width, x + dx)), Math.max(0, Math.min(228 - height, y + dy)), width, height]
+        : [x, y, Math.max(4, Math.min(200 - x, width + dx)), Math.max(4, Math.min(228 - y, height + dy))];
+      render();
+    });
+    svg.addEventListener('pointerup', () => { interaction = null; });
+    svg.addEventListener('pointercancel', () => { interaction = null; });
+
+    propertyInputs.forEach((input, index) => input.addEventListener('input', () => {
+      if (!state.selected || input.value === '') return;
+      const rect = layoutFor()[state.selected];
+      rect[index] = Number(input.value);
+      rect[2] = Math.max(1, rect[2]); rect[3] = Math.max(1, rect[3]);
+      render();
+    }));
+
+    document.addEventListener('keydown', event => {
+      if (!state.selected || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) || event.target.matches('input, select, textarea')) return;
+      event.preventDefault();
+      const distance = event.shiftKey ? 5 : 1;
+      const rect = layoutFor()[state.selected];
+      if (event.key === 'ArrowUp') rect[1] = Math.max(0, rect[1] - distance);
+      if (event.key === 'ArrowDown') rect[1] = Math.min(228 - rect[3], rect[1] + distance);
+      if (event.key === 'ArrowLeft') rect[0] = Math.max(0, rect[0] - distance);
+      if (event.key === 'ArrowRight') rect[0] = Math.min(200 - rect[2], rect[0] + distance);
+      render();
+    });
+
+    document.getElementById('themeSelect').addEventListener('change', event => {
+      state.theme = event.target.value; renderControls(); render();
+    });
+    document.getElementById('resetScreen').onclick = () => {
+      delete state.layouts[state.screen]; state.selected = null; render();
+    };
+    document.getElementById('resetAll').onclick = () => {
+      if (!confirm('Reset every screen layout and both color palettes?')) return;
+      state.layouts = {}; state.themes = clone(defaultThemes); state.selected = null; renderControls(); render();
+    };
+
+    function exportValues() {
+      const lines = ['/* dreamwave visual editor export */', ''];
+      Object.entries(state.themes).forEach(([name, colors]) => {
+        lines.push(`/* ${name} theme (choose nearest Pebble GColor constants) */`);
+        Object.entries(colors).forEach(([key, value]) => lines.push(`// ${key}: ${value}`));
+        lines.push('');
+      });
+      Object.entries(screens).forEach(([screenId, screen]) => {
+        lines.push(`/* ${screen.label} */`);
+        const layout = layoutFor(screenId);
+        screen.elements.forEach(item => lines.push(`// ${item[1].padEnd(16)} GRect(${layout[item[0]].join(', ')})`));
+        lines.push('');
+      });
+      return lines.join('\n');
+    }
+    document.getElementById('exportButton').onclick = () => {
+      document.getElementById('exportText').value = exportValues();
+      document.getElementById('exportDialog').showModal();
+    };
+    document.getElementById('closeDialog').onclick = () => document.getElementById('exportDialog').close();
+    document.getElementById('copyExport').onclick = async event => {
+      await navigator.clipboard.writeText(document.getElementById('exportText').value);
+      event.target.textContent = 'Copied';
+      setTimeout(() => { event.target.textContent = 'Copy to clipboard'; }, 1200);
+    };
+
+    renderControls();
+    render();
+  </script>
+</body>
+</html>

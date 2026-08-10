@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dreamwave Barbie Theme Directions</title>
+  <style>
+    :root { color-scheme: dark; --page: #100a10; --ink: #fff8fc; --muted: #bbaab5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: radial-gradient(circle at 15% 0, #5c1743, transparent 32rem), var(--page); color: var(--ink); font-family: Inter, "Segoe UI", sans-serif; }
+    main { max-width: 1320px; margin: auto; padding: 42px 22px 72px; }
+    header { max-width: 760px; margin-bottom: 34px; }
+    .eyebrow { color: #ff63ad; font: 800 11px/1 monospace; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { margin: 11px 0 13px; font-size: clamp(38px, 7vw, 72px); line-height: .9; letter-spacing: -.06em; }
+    header p, .direction-head p { color: var(--muted); line-height: 1.55; }
+    .direction { margin-top: 55px; }
+    .direction-head { display: flex; align-items: end; justify-content: space-between; gap: 22px; border-bottom: 1px solid #ffffff24; }
+    .direction-head h2 { margin: 0; font-size: 29px; letter-spacing: -.04em; }
+    .direction-head p { max-width: 590px; margin: 7px 0 13px; font-size: 13px; }
+    .swatches { display: flex; gap: 6px; margin-bottom: 15px; }
+    .swatches i { width: 20px; height: 20px; border-radius: 50%; box-shadow: 0 0 0 1px #fff5; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 25px; margin-top: 25px; }
+    article { text-align: center; }
+    article h3 { margin: 15px 0 4px; font-size: 14px; }
+    article > p { margin: 0; color: #9e8d98; font-size: 11px; }
+    .watch { width: 240px; height: 274px; margin: auto; padding: 17px 20px; border-radius: 29px; background: linear-gradient(145deg, #81777e, #2a2529 38%, #080708 82%); box-shadow: 0 22px 45px #000b, inset 0 1px #fff8; }
+    .screen { position: relative; width: 200px; height: 228px; overflow: hidden; border-radius: 7px; text-align: left; }
+    .screen::before, .screen::after { content: ""; position: absolute; pointer-events: none; }
+    .header { height: 22px; padding: 3px 7px; font-size: 11px; font-weight: 900; letter-spacing: .04em; }
+    .brand { padding: 6px 10px 0; font-size: 14px; font-weight: 900; text-align: center; }
+    .mic { position: relative; width: 70px; height: 70px; margin: 7px auto 4px; display: grid; place-items: center; }
+    .mic::before { content: ""; width: 16px; height: 27px; border: 4px solid; border-radius: 10px; }
+    .mic::after { content: "⌒"; position: absolute; top: 25px; font: 900 41px/1 Arial; }
+    .prompt { font-size: 15px; font-weight: 900; text-align: center; }
+    .button { height: 37px; margin: 8px 14px 0; display: grid; place-items: center; font-size: 11px; font-weight: 900; }
+    .query { height: 25px; padding: 3px 8px; font-size: 15px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row { height: 44px; margin: 0 5px; padding: 4px 7px; display: grid; grid-template-columns: 27px 1fr; align-items: center; gap: 5px; }
+    .row .num { font-size: 15px; font-weight: 900; text-align: center; }
+    .row b, .row small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row b { font-size: 14px; }
+    .row small { margin-top: 1px; font-size: 10px; }
+    .loader { position: relative; width: 106px; height: 106px; margin: 26px auto 9px; border: 5px dotted; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 900; }
+    .loading-song { padding: 0 10px; text-align: center; }
+    .loading-song b { display: block; font-size: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .loading-song small { display: block; margin-top: 2px; font-size: 12px; }
+    .song { padding: 11px 40px 0 10px; }
+    .song b { display: block; height: 70px; overflow: hidden; font-size: 25px; line-height: .98; }
+    .song span { display: block; margin-top: 5px; font-size: 12px; font-weight: 700; }
+    .progress { height: 7px; margin: 7px 40px 0 10px; }
+    .progress i { display: block; width: 39%; height: 100%; }
+    .state { height: 36px; margin: 16px 39px 0 9px; display: grid; place-items: center; font-size: 11px; font-weight: 900; }
+    .bar { position: absolute; top: 0; right: 0; width: 30px; height: 228px; display: grid; grid-template-rows: repeat(3, 1fr); }
+    .bar i { display: grid; place-items: center; font: normal 900 18px/1 Arial; }
+
+    .malibu { background: #ffb8d8; color: #71063c; font-family: "Trebuchet MS", sans-serif; }
+    .malibu::before { width: 95px; height: 95px; right: -38px; top: 24px; border-radius: 50%; background: #ff65aa66; }
+    .malibu::after { width: 45px; height: 45px; left: -20px; bottom: 22px; transform: rotate(45deg); background: #fff2f8aa; }
+    .malibu > * { position: relative; z-index: 1; }
+    .malibu .header { background: #e90072; color: white; }
+    .malibu .brand { color: #a40055; font-style: italic; }
+    .malibu .mic { border-radius: 50%; background: white; color: #e90072; box-shadow: 5px 5px #ff65aa; }
+    .malibu .button { border-radius: 19px; background: #e90072; color: white; box-shadow: inset 0 -4px #a40055; font-style: italic; }
+    .malibu .query { color: #9f0052; }
+    .malibu .row { border-radius: 8px; }
+    .malibu .row.selected { background: #e90072; color: white; box-shadow: inset 0 -4px #9f0052; }
+    .malibu .loader { color: #e90072; background: #fff8fc; box-shadow: 6px 6px #ff65aa; }
+    .malibu .loading-song small, .malibu .song span { color: #8d39bc; }
+    .malibu .song b { color: #9f0052; font-style: italic; text-shadow: 2px 2px white; }
+    .malibu .progress { background: white; }.malibu .progress i { background: #e90072; }
+    .malibu .state { border-radius: 14px; background: white; color: #e90072; }
+    .malibu .bar { background: #fff8fc; color: #e90072; }.malibu .bar i:nth-child(2) { background: #e90072; color: white; }
+
+    .runway { background: #f7d9df; color: #1d1117; font-family: Georgia, serif; }
+    .runway::before { width: 260px; height: 9px; left: -25px; top: 105px; background: #ef257e; transform: rotate(-8deg); }
+    .runway .header { background: #1d1117; color: #f7d9df; font-family: Arial, sans-serif; }
+    .runway .brand { font: italic 900 18px/1 Georgia; }
+    .runway .mic { color: #1d1117; border: 2px solid #1d1117; background: #ef257e; box-shadow: 6px 6px #1d1117; }
+    .runway .button { border: 2px solid #1d1117; background: #f7d9df; box-shadow: 4px 4px #1d1117; }
+    .runway .query { border-bottom: 2px solid #1d1117; font-style: italic; }
+    .runway .row { border-bottom: 1px solid #9f7686; }
+    .runway .row.selected { background: #1d1117; color: #f7d9df; }
+    .runway .loader { color: #1d1117; border-style: double; border-width: 8px; background: #ef257e; }
+    .runway .loading-song small, .runway .song span { color: #a9004e; font-style: italic; }
+    .runway .song b { font: italic 900 28px/.92 Georgia; }
+    .runway .progress { background: #bca5ad; }.runway .progress i { background: #ef257e; }
+    .runway .state { border: 2px solid #1d1117; box-shadow: 4px 4px #ef257e; }
+    .runway .bar { background: #1d1117; color: #f7d9df; }.runway .bar i:nth-child(2) { background: #ef257e; color: white; }
+
+    .arcade { background: #2a0837; color: #fff2fb; font-family: "Arial Black", Arial, sans-serif; }
+    .arcade::before { inset: 0; background-image: linear-gradient(#ff4ca51f 1px, transparent 1px), linear-gradient(90deg, #ff4ca51f 1px, transparent 1px); background-size: 13px 13px; }
+    .arcade > * { position: relative; z-index: 1; }
+    .arcade .header { background: #ffce3a; color: #2a0837; }
+    .arcade .brand { color: #ff63bc; text-shadow: 2px 2px #7c37e5; }
+    .arcade .mic { color: #fff; border: 3px solid #ffce3a; border-radius: 8px; background: #ff2f91; box-shadow: 5px 5px #7238d1; }
+    .arcade .button { background: #ffce3a; color: #2a0837; box-shadow: 5px 5px #ff2f91; }
+    .arcade .query { color: #ffce3a; }
+    .arcade .row { border-bottom: 2px solid #76318e; }
+    .arcade .row.selected { background: #ff2f91; color: white; box-shadow: 4px 4px #ffce3a; }
+    .arcade .loader { color: #ffce3a; background: #ff2f91; box-shadow: 7px 7px #7238d1; }
+    .arcade .loading-song small, .arcade .song span { color: #ffce3a; }
+    .arcade .song b { color: white; text-shadow: 3px 3px #ff2f91; }
+    .arcade .progress { background: #673175; }.arcade .progress i { background: #ffce3a; }
+    .arcade .state { background: #ff2f91; color: white; box-shadow: 4px 4px #ffce3a; }
+    .arcade .bar { background: #ffce3a; color: #2a0837; }.arcade .bar i:nth-child(2) { background: #ff2f91; color: white; }
+
+    @media (max-width: 1080px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 580px) { main { padding-inline: 12px; }.grid { grid-template-columns: 1fr; }.direction-head { align-items: start; flex-direction: column; }.swatches { margin-top: -8px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">dreamwave / Theme Study</div>
+    <h1>Barbie, three ways.</h1>
+    <p>Three visual directions built around the watch app’s real home, results, loading, and playing states. These are mockups only; no theme has been applied to the native app.</p>
+  </header>
+  <div id="directions"></div>
+</main>
+<script>
+  const directions = [
+    { id: 'malibu', name: 'A. Malibu Dreamhouse', description: 'Glossy, playful and closest to the current theme, with stronger contrast and cleaner hierarchy.', colors: ['#ffb8d8','#e90072','#fff8fc','#8d39bc'] },
+    { id: 'runway', name: 'B. Fashion Editorial', description: 'Barbie as a high-fashion magazine: blush paper, black ink, hot-pink accents and sharp geometry.', colors: ['#f7d9df','#1d1117','#ef257e','#a9004e'] },
+    { id: 'arcade', name: 'C. Barbie Arcade', description: 'A saturated 1980s toy-box direction with purple night tones, candy pink and golden highlights.', colors: ['#2a0837','#ff2f91','#ffce3a','#7238d1'] }
+  ];
+  const screens = [
+    ['Home', 'Primary voice-search entry point'],
+    ['Results', 'Large four-row result list'],
+    ['Loading', 'Full-screen animated preparation state'],
+    ['Playing', 'Playback with the secondary action overlay']
+  ];
+  function content(kind) {
+    if (kind === 'Home') return '<div class="header">CONNECTED</div><div class="brand">dreamwave</div><div class="mic"></div><div class="prompt">Search music</div><div class="button">START SEARCH</div>';
+    if (kind === 'Results') return '<div class="header">SEARCH RESULTS</div><div class="query">Midnight City by M83</div>' + [['01','Midnight City','M83'],['02','Wait','M83'],['03','Sweet Disposition','The Temper Trap'],['04','Genesis','Grimes']].map((r,i)=>`<div class="row ${i===0?'selected':''}"><span class="num">${r[0]}</span><span><b>${r[1]}</b><small>${r[2]}</small></span></div>`).join('');
+    if (kind === 'Loading') return '<div class="loader">LOADING</div><div class="loading-song"><b>Midnight City</b><small>M83</small></div>';
+    return '<div class="header">PLAYING</div><div class="song"><b>Midnight<br>City</b><span>M83</span></div><div class="progress"><i></i></div><div class="state">PLAYING / VOL 50%</div><div class="bar"><i>+</i><i>Ⅱ</i><i>−</i></div>';
+  }
+  document.getElementById('directions').innerHTML = directions.map(direction => `<section class="direction"><div class="direction-head"><div><h2>${direction.name}</h2><p>${direction.description}</p></div><div class="swatches">${direction.colors.map(color=>`<i style="background:${color}"></i>`).join('')}</div></div><div class="grid">${screens.map(screen=>`<article><div class="watch"><div class="screen ${direction.id}">${content(screen[0])}</div></div><h3>${screen[0]}</h3><p>${screen[1]}</p></article>`).join('')}</div></section>`).join('');
+</script>
+</body>
+</html>

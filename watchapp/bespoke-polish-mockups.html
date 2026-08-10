@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dreamwave — bespoke polish mockups</title>
+<style>
+  :root {
+    --accent: #FF00AA;      /* Default theme = GColorFashionMagenta */
+    --page-bg: #14131a;
+    --card-bg: #1e1c26;
+    --edge: #322f3d;
+    --ink: #e9e6f2;
+    --ink-dim: #9c96b0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 28px 80px;
+    background: var(--page-bg);
+    color: var(--ink);
+    font: 15px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  header { max-width: 1100px; margin: 0 auto 8px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.2px; }
+  h2 {
+    font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase;
+    color: var(--ink-dim); margin: 46px 0 4px; font-weight: 600;
+  }
+  .lede { color: var(--ink-dim); max-width: 74ch; margin: 0 0 18px; }
+  .lede code { color: var(--ink); background: #2a2733; padding: 1px 5px; border-radius: 4px; }
+  .themebar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 18px 0 4px; }
+  .themebar span { color: var(--ink-dim); font-size: 13px; margin-right: 4px; }
+  .themebar button {
+    background: var(--card-bg); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 999px; padding: 5px 13px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .themebar button:hover { border-color: var(--ink-dim); }
+  .themebar button[aria-pressed="true"] { border-color: var(--accent); color: #fff; }
+  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+  main { max-width: 1100px; margin: 0 auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(410px, 1fr)); gap: 26px; margin-top: 14px; }
+  .card { background: var(--card-bg); border: 1px solid var(--edge); border-radius: 12px; padding: 18px 18px 16px; }
+  .card.ref { opacity: 0.72; }
+  .card h3 { margin: 0; font-size: 15px; display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+  .tag {
+    font: 600 11px/1 "Segoe UI", system-ui, sans-serif; letter-spacing: 1px;
+    background: var(--accent); color: #fff; padding: 4px 7px; border-radius: 4px;
+  }
+  .card.ref .tag { background: #4a4657; }
+  .pick {
+    font: 600 10px/1 "Segoe UI", system-ui, sans-serif; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--accent); border: 1px solid var(--accent); padding: 3px 6px; border-radius: 4px;
+  }
+  .why { color: var(--ink-dim); font-size: 13.5px; margin: 7px 0 14px; min-height: 40px; }
+  .why b { color: var(--ink); font-weight: 600; }
+
+  /* Emery is 200x228; every screen is authored in real watch pixels and scaled 2x. */
+  .frame { width: 400px; height: 456px; border-radius: 6px; overflow: hidden; background: #fff; }
+  .screen {
+    position: relative; width: 200px; height: 228px; background: #fff; overflow: hidden;
+    transform: scale(2); transform-origin: top left;
+    font-family: "Segoe UI", Roboto, system-ui, sans-serif;
+    font-stretch: 96%;
+  }
+  .screen div { position: absolute; }
+  .screen svg { position: absolute; left: 0; top: 0; }
+  .screen .tx { letter-spacing: -0.2px; white-space: pre; overflow: hidden; }
+  .screen .wrap { white-space: normal; }
+  footer { max-width: 1100px; margin: 60px auto 0; color: var(--ink-dim); font-size: 13.5px; }
+  footer code { color: var(--ink); background: #2a2733; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>dreamwave — bespoke polish mockups</h1>
+  <p class="lede">
+    Three problems, three groups of fixes. <b>1.</b> Secondary text ships as <code>GColorDarkGray</code>
+    (<code>#555</code>) at 14px — washed out on Emery's 64-color e-paper. <b>2.</b> The Now Playing
+    <em>More</em> popup (big 28px action name, value underneath, circular icon row) is a design language
+    used nowhere else, so it reads as a foreign screen. <b>3.</b> The bespoke Home is a status card over
+    four bare rows and earns neither its space nor its place. Rendered at real Emery pixels
+    (200&times;228), scaled 2&times;; coordinates map directly onto the <code>draw_*</code> calls in
+    <code>main.c</code>. Fonts approximate Pebble Gothic — weights and positions are exact, glyph shapes
+    are not. Cards marked <span class="pick">recommended</span> are my picks.
+  </p>
+  <p class="lede">
+    <b>Update — unification pass:</b> the last three sections cover the consistency plan. <b>The shared
+    grid</b> (S1) gives lists and pagers one set of furniture coordinates (eyebrow <code>(18,18)</code>,
+    footer <code>(8,202)</code>). <b>Input Choice</b> (S3) becomes the third pager. <b>Searching /
+    Buffering / Error</b> (S4) drop the last accent header bands for the chromeless language.
+  </p>
+  <div class="themebar">
+    <span>Accent:</span>
+    <button data-accent="#FF00AA" aria-pressed="true"><i class="swatch" style="background:#FF00AA"></i>Default</button>
+    <button data-accent="#00AAAA"><i class="swatch" style="background:#00AAAA"></i>Teal</button>
+    <button data-accent="#AA55AA"><i class="swatch" style="background:#AA55AA"></i>Purple</button>
+    <button data-accent="#FF5555"><i class="swatch" style="background:#FF5555"></i>Sunset</button>
+    <button data-accent="#000000"><i class="swatch" style="background:#000;outline:1px solid #555"></i>Mono</button>
+  </div>
+</header>
+
+<main id="out"></main>
+
+<footer>
+  Pick by label — e.g. &ldquo;SUB&nbsp;E, HOME&nbsp;B, MORE&nbsp;B, PAGER&nbsp;SETTINGS&rdquo; — and I&rsquo;ll build those into
+  <code>watchapp/src/c/main.c</code> behind the existing Bespoke UI toggle. Nothing here touches the
+  stock (non-bespoke) screens.
+</footer>
+
+<script>
+/* ---------------------------------------------------------------------------
+   Tiny renderer. Screens are authored as flat lists of primitives in watch
+   coordinates so the numbers here transfer straight into the C draw_* calls.
+   --------------------------------------------------------------------------- */
+const COLORS = {
+  accent: 'var(--accent)',
+  black:  '#000000',
+  white:  '#FFFFFF',
+  dark:   '#555555',   // GColorDarkGray
+  light:  '#AAAAAA',   // GColorLightGray
+};
+const FONTS = {
+  '14':  'normal 14px',  '14b': 'bold 14px',
+  '18':  'normal 18px',  '18b': 'bold 18px',
+  '24b': 'bold 24px',    '28b': 'bold 28px',
+};
+const col = v => COLORS[v] || v;
+
+/* text box: matches draw_text(ctx, s, font, color, GRect(x,y,w,h), align) */
+function t(x, y, w, h, text, o = {}) {
+  const f = FONTS[o.f || '18'];
+  return `<div class="tx ${o.wrap ? 'wrap' : ''}" style="
+    left:${x}px; top:${y - 2}px; width:${w}px; height:${h}px;
+    font:${f}/1.15 inherit; color:${col(o.c || 'black')};
+    text-align:${o.a || 'left'};"><span>${text}</span></div>`;
+}
+/* filled rect: graphics_fill_rect(ctx, GRect(...), radius, corners) */
+function r(x, y, w, h, o = {}) {
+  return `<div style="
+    left:${x}px; top:${y}px; width:${w}px; height:${h}px;
+    background:${o.fill ? col(o.fill) : 'transparent'};
+    border-radius:${o.rad || 0}px;
+    ${o.stroke ? `border:${o.sw || 1}px solid ${col(o.stroke)};` : ''}"></div>`;
+}
+/* filled circle: graphics_fill_circle(ctx, GPoint(cx,cy), r) */
+function c(cx, cy, rad, o = {}) {
+  return r(cx - rad, cy - rad, rad * 2, rad * 2, { ...o, rad: rad });
+}
+
+/* Icon primitives, mirroring the C icon helpers (stroke-width 2, round caps). */
+const ICON = {
+  shuffle: `<path d="M-8,-6 L5,6 M5,6 L2,2 M5,6 L1,8 M-8,6 L-1,6 M2,-6 L8,-6 M8,-6 L5,-10 M8,-6 L4,-4" fill="none"/>`,
+  repeat:  `<path d="M-8,-5 L7,-5 M7,-5 L3,-9 M7,-5 L3,-1 M8,5 L-7,5 M-7,5 L-3,1 M-7,5 L-3,9" fill="none"/>`,
+  heart:   `<g stroke="none"><circle cx="-4" cy="-2" r="4"/><circle cx="4" cy="-2" r="4"/><polygon points="-8,-2 8,-2 0,8"/></g>`,
+  phone:   `<rect x="-6.5" y="-9.5" width="13" height="19" rx="3" fill="none"/><g stroke="none"><rect x="-2" y="-7" width="4" height="2" rx="1"/><circle cx="0" cy="6" r="2"/></g>`,
+  watch:   `<rect x="-7" y="-7" width="14" height="14" rx="3" fill="none"/><g stroke="none"><rect x="-3.5" y="-11" width="7" height="4" rx="1"/><rect x="-3.5" y="7" width="7" height="4" rx="1"/></g>`,
+  search:  `<circle cx="-2" cy="-2" r="6" fill="none"/><path d="M3,3 L9,9"/>`,
+  queue:   `<path d="M-8,-7 L8,-7 M-8,0 L8,0 M-8,7 L3,7" fill="none"/>`,
+  gear:    `<circle r="3.5" fill="none"/><path d="M0,-8 L0,-5.5 M0,8 L0,5.5 M-8,0 L-5.5,0 M8,0 L5.5,0 M-5.6,-5.6 L-3.9,-3.9 M5.6,5.6 L3.9,3.9 M5.6,-5.6 L3.9,-3.9 M-5.6,5.6 L-3.9,3.9" fill="none"/>`,
+  library: `<circle r="8" fill="none"/><g stroke="none"><circle r="2"/></g>`,
+  sliders: `<path d="M-6,-7 L-6,7 M0,-7 L0,7 M6,-7 L6,7" fill="none"/><g stroke="none"><circle cx="-6" cy="-2" r="3"/><circle cx="0" cy="3" r="3"/><circle cx="6" cy="-4" r="3"/></g>`,
+  info:    `<circle r="7" fill="none"/><g stroke="none"><circle cx="0" cy="-3" r="1.6"/><rect x="-1" y="0" width="2" height="5" rx="1"/></g>`,
+  /* Search-type pager glyphs, matching draw_note_icon/draw_person_icon/draw_broadcast_icon. */
+  note:    `<g stroke="none"><circle cx="-3" cy="5" r="4"/></g><path d="M1,5 L1,-7 M1,-7 L6,-4" fill="none"/>`,
+  person:  `<g stroke="none"><circle cx="0" cy="-4" r="4"/><rect x="-6" y="2" width="12" height="7" rx="3"/></g>`,
+  radio:   `<g stroke="none"><circle r="2"/></g><path d="M-3.5,3.5 A5,5 0 0 0 -3.5,-3.5 M3.5,-3.5 A5,5 0 0 1 3.5,3.5 M-6.4,6.4 A9,9 0 0 0 -6.4,-6.4 M6.4,-6.4 A9,9 0 0 1 6.4,6.4" fill="none"/>`,
+  /* Input-choice pager glyphs. */
+  mic:     `<rect x="-3" y="-8" width="6" height="10" rx="3" fill="none"/><path d="M-5,-1 A5,5 0 0 0 5,-1 M0,4 L0,7 M-3,7 L3,7" fill="none"/>`,
+  keyboard: `<g stroke="none"><rect x="-8" y="-8" width="4" height="4"/><rect x="-2" y="-8" width="4" height="4"/><rect x="4" y="-8" width="4" height="4"/><rect x="-8" y="-2" width="4" height="4"/><rect x="-2" y="-2" width="4" height="4"/><rect x="4" y="-2" width="4" height="4"/><rect x="-8" y="4" width="4" height="4"/><rect x="-2" y="4" width="4" height="4"/><rect x="4" y="4" width="4" height="4"/></g>`,
+};
+function icn(cx, cy, kind, color, sw = 2) {
+  return `<svg width="200" height="228" viewBox="0 0 200 228"><g transform="translate(${cx},${cy})"
+    stroke="${col(color)}" stroke-width="${sw}" fill="${col(color)}"
+    stroke-linecap="round" stroke-linejoin="round">${ICON[kind]}</g></svg>`;
+}
+
+/* Shared furniture ------------------------------------------------------- */
+const eyebrow = (label, c = 'dark') => t(18, 14, 164, 18, label, { f: '14b', c });
+const footerHint = txt => t(8, 204, 184, 18, txt, { f: '14', c: 'black', a: 'center' });
+const scrollbar = (top, h, thumbTop, thumbH) =>
+  r(194, top, 4, h, { fill: 'light', rad: 2 }) + r(194, thumbTop, 4, thumbH, { fill: 'accent', rad: 2 });
+/* bespoke_frame(): re-stamps white bands over scrolled rows, eyebrow + footer on top. */
+const frame = (label, hint, ec = 'dark') =>
+  r(0, 0, 200, 40, { fill: 'white' }) + eyebrow(label, ec)
+  + r(0, 198, 200, 30, { fill: 'white' }) + (hint ? footerHint(hint) : '');
+
+/* Two-line row, bespoke_row2() geometry: title (12,y+1) 18b, sub (12,y+20) 14. */
+function row2(y, title, sub, sel, o = {}) {
+  const h = o.h || 39;
+  return (sel ? r(5, y, 190, h, { fill: 'accent', rad: 4 }) : '')
+    + t(12, y + 1, 176, 22, title, { f: '18b', c: sel ? 'white' : (o.tc || 'black') })
+    + t(12, y + 20, 176, 18, sub, { f: o.sf || '14', c: sel ? 'white' : (o.sc || 'dark') });
+}
+/* Single-line row, bespoke_row1() geometry. */
+function row1(y, label, value, sel, o = {}) {
+  const h = o.h || 39;
+  const ty = y + Math.round((h - 22) / 2);
+  return (sel ? r(5, y, 190, h, { fill: 'accent', rad: 4 }) : '')
+    + t(12, ty, value ? 100 : 176, 22, label, { f: '18b', c: sel ? 'white' : 'black' })
+    + (value ? t(112, ty + 3, 76, 18, value, { f: '14', c: sel ? 'white' : 'accent', a: 'right' }) : '');
+}
+/* The More popup's icon row: selected icon in an accent circle, active toggles tinted. */
+function iconRow(y, kinds, sel, actives = [], pitch = 30) {
+  const n = kinds.length;
+  return kinds.map((k, i) => {
+    const cx = 100 + (2 * i - (n - 1)) * pitch / 2;
+    const glyph = i === sel ? 'white' : (actives.includes(i) ? 'accent' : 'black');
+    return (i === sel ? c(cx, y, 17, { fill: 'accent' }) : '') + icn(cx, y, k, glyph);
+  }).join('');
+}
+/* Pager position dots. */
+const dots = (y, n, sel) => Array.from({ length: n }, (_, i) => {
+  const cx = 100 + (2 * i - (n - 1)) * 7;
+  return c(cx, y, i === sel ? 3.5 : 2.5, { fill: i === sel ? 'accent' : 'light' });
+}).join('');
+
+/* Blueprint furniture: dashed measurement boxes + 8px annotations (mockup-only,
+   nothing here maps to C). */
+const guide = (x, y, w, h, label, color = 'var(--accent)') =>
+  `<div style="left:${x}px; top:${y}px; width:${w}px; height:${h}px; border:1px dashed ${color};"></div>`
+  + (label ? `<div class="tx" style="left:${x + 3}px; top:${y + 2}px; width:${w - 6}px; height:${h - 2}px;
+       font:normal 8px/1.2 inherit; color:${color}; overflow:hidden;"><span>${label}</span></div>` : '');
+const note8 = (x, y, w, text, color = 'var(--accent)') =>
+  `<div class="tx" style="left:${x}px; top:${y}px; width:${w}px; height:10px;
+     font:normal 8px/1.1 inherit; color:${color}; overflow:hidden;"><span>${text}</span></div>`;
+
+/* ===========================================================================
+   SCREENS
+   =========================================================================== */
+const SECTIONS = [];
+const S = (name, items) => SECTIONS.push({ name, items });
+
+/* --- 1. GRAY TEXT, FIXED -------------------------------------------------- */
+const SONGS = [
+  ['Midnight City', 'M83'], ['Digital Love', 'Daft Punk'],
+  ['Nightcall', 'Kavinsky'], ['Instant Crush', 'Daft Punk'],
+];
+const songList = (o = {}) => SONGS.map(([tt, ar], i) =>
+  row2(40 + i * 43, tt, ar, i === 1, o)).join('');
+
+S('Gray text, fixed (song list as the test bed)', [
+{
+  tag: 'SUB A', title: 'What ships today', ref: true,
+  why: 'Reference. Subtitles and the eyebrow are <b>#555 at 14px</b> — the wash-out you flagged. Everything below this row is the same list with one variable changed.',
+  draw: () => songList()
+    + scrollbar(40, 158, 40, 96)
+    + frame('SEARCH RESULTS', 'SELECT play    BACK close'),
+},
+{
+  tag: 'SUB B', title: 'Black subtitle',
+  why: 'Subtitle flips to pure black, same size and weight. A one-line change in <b>bespoke_row2()</b>; hierarchy survives because the title is larger and bold. Minimal, safe.',
+  draw: () => songList({ sc: 'black' })
+    + scrollbar(40, 158, 40, 96)
+    + frame('SEARCH RESULTS', 'SELECT play    BACK close'),
+},
+{
+  tag: 'SUB C', title: 'Bold gray subtitle',
+  why: 'Keeps the gray, adds weight. Helps a little, but bold 14px Gothic muddies on e-paper and gray is still gray in sunlight. The weakest of the fixes.',
+  draw: () => songList({ sf: '14b' })
+    + scrollbar(40, 158, 40, 96)
+    + frame('SEARCH RESULTS', 'SELECT play    BACK close'),
+},
+{
+  tag: 'SUB D', title: 'Accent subtitle',
+  why: 'Subtitle in the theme accent. Readable and on-brand, but a full column of colored text competes with the selection pill and with the now-playing row tint.',
+  draw: () => songList({ sc: 'accent' })
+    + scrollbar(40, 158, 40, 96)
+    + frame('SEARCH RESULTS', 'SELECT play    BACK close'),
+},
+{
+  tag: 'SUB E', title: 'Full contrast pass', pick: true,
+  why: '<b>Built.</b> Black subtitles <b>and</b> a black eyebrow — the eyebrow is the same #555 and just as washed out. One constant change fixes every bespoke screen at once (rows, eyebrow, empty states).',
+  draw: () => songList({ sc: 'black' })
+    + scrollbar(40, 158, 40, 96)
+    + frame('SEARCH RESULTS', 'SELECT play    BACK close', 'black'),
+},
+]);
+
+/* --- 2. HOME, REDESIGNED --------------------------------------------------- */
+S('Home, redesigned', [
+{
+  tag: 'HOME A', title: 'What ships today', ref: true,
+  why: 'Reference. Status card over four bare rows. The card is a shrunken Now Playing screen; the rows say nothing about what they hold. Functional, joyless.',
+  draw: () => row1(83, 'Search', null, false)
+    + row1(126, 'Library', null, true)
+    + row1(169, 'Settings', null, false)
+    + row1(212, 'About', null, false)
+    + r(0, 0, 200, 83, { fill: 'white' })
+    + eyebrow('DREAMWAVE')
+    + r(5, 40, 190, 39, { fill: 'accent', rad: 4 })
+    + t(12, 42, 116, 16, 'NOW PLAYING', { f: '14b', c: 'white' })
+    + t(132, 42, 56, 16, 'PHONE', { f: '14b', c: 'white', a: 'right' })
+    + t(12, 57, 176, 22, 'Midnight City', { f: '18b', c: 'white' })
+    + scrollbar(83, 145, 83, 122),
+},
+{
+  tag: 'HOME B', title: 'Hero selected', pick: true,
+  why: '<b>Built.</b> A true More-menu Home: the upper surface always describes the highlighted ring entry. With the hero highlighted (index 0, present whenever a track is loaded) it\u2019s the now-playing card \u2014 SELECT opens Now Playing. UP/DOWN walk the ring; SELECT opens.',
+  draw: () => eyebrow('DREAMWAVE')
+    + r(5, 32, 190, 122, { fill: 'accent', rad: 6 })
+    + t(18, 40, 116, 16, 'NOW PLAYING', { f: '14b', c: 'white' })
+    + t(126, 40, 56, 16, 'PHONE', { f: '14b', c: 'white', a: 'right' })
+    + t(18, 60, 164, 32, 'Midnight City', { f: '24b', c: 'white' })
+    + t(18, 92, 164, 22, 'M83', { f: '18', c: 'white' })
+    + r(18, 122, 164, 4, { fill: 'light', rad: 2 })
+    + r(18, 122, 98, 4, { fill: 'white', rad: 2 })
+    + t(18, 130, 82, 16, '2:31', { f: '14b', c: 'white' })
+    + t(100, 130, 82, 16, '4:03', { f: '14b', c: 'white', a: 'right' })
+    + iconRow(178, ['search', 'library', 'sliders', 'info'], -1, [], 40)
+    + footerHint('UP/DOWN choose    SELECT open'),
+},
+{
+  tag: 'HOME C', title: 'Destination selected', pick: true,
+  why: '<b>Built.</b> Docking on a destination swaps the upper surface to the More popup\u2019s name-over-description: the title in the 28px slot, what it holds in the 18px gray slot, selection disc on the dock. Idle Home lands here on Search \u2014 the rotating quote now lives only on the art home.',
+  draw: () => eyebrow('DREAMWAVE')
+    + t(18, 54, 164, 40, 'Library', { f: '28b', c: 'black' })
+    + t(18, 96, 164, 24, 'Recent, cached, saved', { f: '18', c: 'dark' })
+    + iconRow(178, ['search', 'library', 'sliders', 'info'], 1, [], 40)
+    + footerHint('UP/DOWN choose    SELECT open'),
+},
+{
+  tag: 'HOME D', title: 'Destination pager',
+  why: 'The More popup\u2019s layout verbatim as a Home pager: one destination huge, its description underneath, dots for position. Most radical; costs you the one-glance overview of all four destinations.',
+  draw: () => eyebrow('DREAMWAVE')
+    + t(18, 64, 164, 40, 'Library', { f: '28b', c: 'black' })
+    + t(18, 106, 164, 24, 'Recent, cached, saved', { f: '18', c: 'dark' })
+    + dots(152, 4, 1)
+    + footerHint('UP/DOWN choose    SELECT open'),
+},
+]);
+
+/* --- 3. THE MORE PATTERN, EXPORTED ----------------------------------------- */
+S('The More pattern, exported to other screens', [
+{
+  tag: 'PAGER SETTINGS', title: 'Settings as the More popup',
+  why: 'One setting per page in 28px, its current value in accent underneath, dots mark position. SELECT cycles the value in place. Trades the six-row overview for zero squinting \u2014 and Settings becomes Now Playing\u2019s obvious sibling.',
+  draw: () => eyebrow('SETTINGS')
+    + t(18, 54, 164, 40, 'Watch volume', { f: '28b', c: 'black' })
+    + t(18, 96, 164, 24, '70%', { f: '18', c: 'accent' })
+    + dots(150, 6, 2)
+    + footerHint('SELECT change    BACK close'),
+},
+{
+  tag: 'PAGER SEARCH', title: 'Search type as the More popup', pick: true,
+  why: '<b>Built.</b> Pixel-1:1 with the More popup: eyebrow at (18,18), 28px name, gray 18px description, and the circular icon row at cy=158/30px pitch \u2014 note for Song Search, person for Artist Radio, broadcast waves for Song Radio. UP/DOWN page, SELECT chooses.',
+  draw: () => t(18, 18, 164, 18, 'SEARCH', { f: '14b', c: 'black' })
+    + t(18, 54, 164, 40, 'Artist Radio', { f: '28b', c: 'black' })
+    + t(18, 96, 164, 44, "An artist's catalogue", { f: '18', c: 'dark', wrap: true })
+    + iconRow(158, ['note', 'person', 'radio'], 1)
+    + t(8, 202, 184, 18, 'SELECT choose    BACK close', { f: '14', c: 'black', a: 'center' }),
+},
+]);
+
+/* --- 4. MORE MENU, POLISHED ------------------------------------------------- */
+S('More menu itself, polished', [
+{
+  tag: 'MORE A', title: 'What ships today', ref: true,
+  why: 'Reference. Great bones: big action name, live value, icon row with state tinting. Two gaps \u2014 nothing says what a toggle <i>does</i>, and the \u201cMENU\u201d eyebrow says nothing at all.',
+  draw: () => t(18, 18, 164, 18, 'MENU', { f: '14b', c: 'dark' })
+    + t(18, 54, 164, 40, 'Repeat', { f: '28b', c: 'black' })
+    + t(18, 96, 164, 24, 'All', { f: '18', c: 'dark' })
+    + iconRow(158, ['shuffle', 'repeat', 'heart', 'phone', 'search', 'queue'], 1, [0, 2])
+    + footerHint('SELECT choose    BACK close'),
+},
+{
+  tag: 'MORE B', title: 'Explained + renamed', pick: true,
+  why: '<b>Partially built:</b> the eyebrow rename to \u201cNOW PLAYING\u201d is in; the explainer line under the value was skipped \u2014 space is tight. Shown here in full in case we want it later.',
+  draw: () => t(18, 18, 164, 18, 'NOW PLAYING', { f: '14b', c: 'black' })
+    + t(18, 54, 164, 40, 'Repeat', { f: '28b', c: 'black' })
+    + t(18, 96, 164, 24, 'All', { f: '18', c: 'dark' })
+    + t(18, 122, 164, 18, 'The queue starts over when it ends', { f: '14', c: 'black' })
+    + iconRow(158, ['shuffle', 'repeat', 'heart', 'phone', 'search', 'queue'], 1, [0, 2])
+    + footerHint('SELECT choose    BACK close'),
+},
+{
+  tag: 'MORE C', title: 'Fold into the list idiom',
+  why: 'The opposite direction: delete the icon row, render More as a standard bespoke list with the fixed black subtitles. Maximum consistency, zero new code \u2014 but the popup loses the big-type personality that made it worth exporting.',
+  draw: () => [
+      ['Shuffle', 'On'], ['Repeat', 'All'], ['Favorite', 'On'],
+      ['Output', 'Phone'], ['New search', 'Start over'], ['Queue', 'Up next'],
+    ].map(([n, v], i) => row2(40 + i * 43, n, v, i === 1, { sc: 'black' })).join('')
+    + scrollbar(40, 158, 40, 97)
+    + frame('PLAYING', 'SELECT choose    BACK close', 'black'),
+},
+]);
+
+/* --- 5. NOW PLAYING CONTRAST ------------------------------------------------ */
+S('Now Playing contrast (same gray problem)', [
+{
+  tag: 'NP A', title: 'What ships today', ref: true,
+  why: 'Reference. \u201con watch\u201d and the artist line are the same washed-out #555 as the list subtitles. Favorite badge and active shuffle show the accent.',
+  draw: () => icn(25, 25, 'watch', 'dark')
+    + t(38, 16, 134, 18, 'on watch', { f: '14b', c: 'dark' })
+    + icn(168, 25, 'heart', 'accent')
+    + t(18, 47, 154, 64, 'Midnight City', { f: '28b', c: 'black', wrap: true })
+    + t(18, 113, 154, 24, 'M83', { f: '18', c: 'dark' })
+    + r(18, 149, 154, 5, { fill: 'light', rad: 3 })
+    + r(18, 149, 92, 5, { fill: 'accent', rad: 3 })
+    + t(18, 158, 77, 18, '2:31', { f: '14b', c: 'black' })
+    + t(95, 158, 77, 18, '4:03', { f: '14b', c: 'black', a: 'right' })
+    + icn(30, 200, 'shuffle', 'accent')
+    + icn(160, 200, 'repeat', 'light')
+    + c(95, 200, 18, { fill: 'accent' })
+    + r(87, 192, 5, 16, { fill: 'white' })
+    + r(98, 192, 5, 16, { fill: 'white' }),
+},
+{
+  tag: 'NP B', title: 'Black secondary text', pick: true,
+  why: '<b>Built.</b> Source label and artist in black. Size and weight still separate them from the 28px title \u2014 only the ink changes. Pairs with SUB E so the whole app\u2019s secondary text is fixed in one pass.',
+  draw: () => icn(25, 25, 'watch', 'black')
+    + t(38, 16, 134, 18, 'on watch', { f: '14b', c: 'black' })
+    + icn(168, 25, 'heart', 'accent')
+    + t(18, 47, 154, 64, 'Midnight City', { f: '28b', c: 'black', wrap: true })
+    + t(18, 113, 154, 24, 'M83', { f: '18', c: 'black' })
+    + r(18, 149, 154, 5, { fill: 'light', rad: 3 })
+    + r(18, 149, 92, 5, { fill: 'accent', rad: 3 })
+    + t(18, 158, 77, 18, '2:31', { f: '14b', c: 'black' })
+    + t(95, 158, 77, 18, '4:03', { f: '14b', c: 'black', a: 'right' })
+    + icn(30, 200, 'shuffle', 'accent')
+    + icn(160, 200, 'repeat', 'light')
+    + c(95, 200, 18, { fill: 'accent' })
+    + r(87, 192, 5, 16, { fill: 'white' })
+    + r(98, 192, 5, 16, { fill: 'white' }),
+},
+]);
+
+/* --- 6. THE SHARED GRID (S1) ------------------------------------------------ */
+S('The shared grid — one set of furniture coordinates', [
+{
+  tag: 'FRAME A', title: 'Today: two grids', ref: true,
+  why: 'Reference. Lists put the eyebrow at <b>y=14</b> and the footer at <b>y=204</b>; the More popup and Search pager use <b>y=18</b> / <b>y=202</b>. The 2\u20134px jump is visible when you page from Search type back into a results list.',
+  draw: () => songList({ sc: 'black' })
+    + scrollbar(40, 158, 40, 96)
+    + frame('SEARCH RESULTS', 'SELECT play    BACK close', 'black')
+    + guide(18, 14, 164, 18, 'eyebrow \u00b7 y14')
+    + guide(8, 204, 184, 18, 'footer \u00b7 y204'),
+},
+{
+  tag: 'FRAME B', title: 'Pager skeleton, unified', pick: true,
+  why: 'The pager grid, proposed as the single standard: eyebrow <b>(18,18)</b>, name 28b at y=54, description 18px at y=96 (wraps to 2 lines), icon row cy=158 at 30px pitch with r=17 selection disc, footer <b>(8,202)</b>. Already true for More and Search type.',
+  draw: () => guide(18, 18, 164, 18, 'eyebrow 14b \u00b7 (18,18)')
+    + guide(18, 54, 164, 40, 'name 28b \u00b7 y54')
+    + guide(18, 96, 164, 48, 'description 18px \u00b7 y96 \u00b7 wraps')
+    + note8(18, 128, 164, 'icons \u00b7 cy=158 \u00b7 pitch 30 \u00b7 disc r17')
+    + c(85, 158, 17, { stroke: 'var(--accent)', sw: 1 })
+    + c(115, 158, 17, { stroke: 'var(--accent)', sw: 1 })
+    + guide(8, 202, 184, 18, 'footer 14 \u00b7 (8,202)'),
+},
+{
+  tag: 'FRAME C', title: 'List skeleton, unified', pick: true,
+  why: 'The list grid shifts to meet the pager: eyebrow moves 14\u219218, footer 204\u2192202. Content geometry untouched: rows still start at y=40 on a 43px pitch, viewport still ends at the y=198 footer band, scrollbar still at x=194.',
+  draw: () => guide(18, 18, 164, 18, 'eyebrow 14b \u00b7 (18,18)')
+    + guide(5, 40, 190, 39, 'row \u00b7 y40 \u00b7 h39')
+    + guide(5, 83, 190, 39, '', '#AAAAAA')
+    + guide(5, 126, 190, 39, 'pitch 43', '#AAAAAA')
+    + guide(194, 40, 4, 158)
+    + note8(150, 182, 44, 'x194')
+    + note8(18, 182, 130, 'viewport \u00b7 40\u2013198')
+    + guide(8, 202, 184, 18, 'footer 14 \u00b7 (8,202)'),
+},
+]);
+
+/* --- 7. INPUT CHOICE PAGER (S3) ---------------------------------------------- */
+S('Input Choice becomes the third pager', [
+{
+  tag: 'INPUT A', title: 'What ships today', ref: true,
+  why: 'Reference. A two-row list \u2014 serviceable, but it\u2019s the same shape of decision as Search type (pick one of a few modes) dressed in a different language.',
+  draw: () => eyebrow('SEARCH WITH')
+    + row1(40, 'Voice search', null, true)
+    + row1(83, 'Keyboard', null, false)
+    + frame('SEARCH WITH', 'SELECT choose'),
+},
+{
+  tag: 'INPUT B', title: 'As a More-style pager', pick: true,
+  why: 'Mic vs grid, 1:1 with the More popup and Search pager. Adds the one-line descriptions the list never had room for. Makes the whole flow \u2014 Home dock \u2192 Search type \u2192 Input choice \u2192 results \u2014 read as one conversation.',
+  draw: () => t(18, 18, 164, 18, 'SEARCH WITH', { f: '14b', c: 'black' })
+    + t(18, 54, 164, 40, 'Voice search', { f: '28b', c: 'black' })
+    + t(18, 96, 164, 24, 'Speak an artist or song title', { f: '18', c: 'dark' })
+    + iconRow(158, ['mic', 'keyboard'], 0)
+    + t(8, 202, 184, 18, 'SELECT choose    BACK close', { f: '14', c: 'black', a: 'center' }),
+},
+]);
+
+/* --- 8. TRANSIENT SCREENS, CHROMELESS (S4) ----------------------------------- */
+S('Searching / Buffering / Error, chromeless', [
+{
+  tag: 'SEARCHING A', title: 'What ships today', ref: true,
+  why: 'Reference. The old accent header band \u2014 the last chrome left in the app \u2014 plus the 7-dot chase animation near the bottom.',
+  draw: () => r(0, 0, 200, 31, { fill: 'accent' })
+    + t(8, 4, 184, 24, 'PHONE LINK', { f: '18b', c: 'white' })
+    + t(10, 31, 180, 19, 'SEARCHING FOR', { f: '14b', c: 'dark' })
+    + t(10, 52, 180, 34, 'daft punk', { f: '24b', c: 'black' })
+    + c(49, 180, 6, { fill: 'accent' }) + c(66, 180, 4, { fill: 'accent' })
+    + c(83, 180, 3, { fill: 'light' }) + c(100, 180, 3, { fill: 'light' })
+    + c(117, 180, 3, { fill: 'light' }) + c(134, 180, 3, { fill: 'light' })
+    + c(151, 180, 3, { fill: 'light' })
+    + t(10, 199, 180, 22, 'Android is finding audio', { f: '14', c: 'black', a: 'center' }),
+},
+{
+  tag: 'SEARCHING B', title: 'Chromeless', pick: true,
+  why: 'The query is the hero, set in the pager\u2019s 28px slot; the status line explains what\u2019s happening; the chase dots live on the icon line (cy=158) so the animation rhymes with the pager grid.',
+  draw: () => t(18, 18, 164, 18, 'SEARCHING', { f: '14b', c: 'black' })
+    + t(18, 54, 164, 40, 'daft punk', { f: '28b', c: 'black', wrap: true })
+    + t(18, 96, 164, 24, 'Finding audio on Android', { f: '18', c: 'dark' })
+    + c(86, 158, 5, { fill: 'accent' }) + c(100, 158, 5, { fill: 'light' })
+    + c(114, 158, 5, { fill: 'light' })
+    + t(8, 202, 184, 18, 'BACK cancel', { f: '14', c: 'black', a: 'center' }),
+},
+{
+  tag: 'BUFFERING A', title: 'What ships today', ref: true,
+  why: 'Reference. Accent header band, equalizer bars mid-screen, title/artist centered below. Same content as Now Playing, none of its layout.',
+  draw: () => r(0, 0, 200, 31, { fill: 'accent' })
+    + t(8, 4, 184, 24, 'FINDING AUDIO', { f: '18b', c: 'white' })
+    + r(55, 105, 10, 12, { fill: 'accent', rad: 3 })
+    + r(75, 99, 10, 24, { fill: 'accent', rad: 3 })
+    + r(95, 93, 10, 36, { fill: 'accent', rad: 3 })
+    + r(115, 99, 10, 24, { fill: 'accent', rad: 3 })
+    + r(135, 105, 10, 12, { fill: 'accent', rad: 3 })
+    + t(12, 144, 176, 33, 'Midnight City', { f: '24b', c: 'black', a: 'center' })
+    + t(12, 176, 176, 25, 'M83', { f: '18', c: 'black', a: 'center' })
+    + t(10, 207, 180, 18, 'BACK TO CANCEL', { f: '14b', c: 'black', a: 'center' }),
+},
+{
+  tag: 'BUFFERING B', title: 'Chromeless', pick: true,
+  why: '<b>Built.</b> Same skeleton as Searching B: eyebrow, track title in the 28px slot, artist in the description slot, equalizer bars centered on the icon line. The handoff Buffering \u2192 Now Playing finally looks like one screen fading into the next.',
+  draw: () => t(18, 18, 164, 18, 'FINDING AUDIO', { f: '14b', c: 'black' })
+    + t(18, 54, 164, 40, 'Midnight City', { f: '28b', c: 'black', wrap: true })
+    + t(18, 96, 164, 24, 'M83', { f: '18', c: 'dark' })
+    + r(55, 152, 10, 12, { fill: 'accent', rad: 3 })
+    + r(75, 146, 10, 24, { fill: 'accent', rad: 3 })
+    + r(95, 140, 10, 36, { fill: 'accent', rad: 3 })
+    + r(115, 146, 10, 24, { fill: 'accent', rad: 3 })
+    + r(135, 152, 10, 12, { fill: 'accent', rad: 3 })
+    + t(8, 202, 184, 18, 'BACK cancel', { f: '14', c: 'black', a: 'center' }),
+},
+{
+  tag: 'ERROR A', title: 'What ships today', ref: true,
+  why: 'Reference. Accent band, mascot, message, gray retry hint. The mascot is the S8 question \u2014 keep it here and everywhere, or nowhere.',
+  draw: () => r(0, 0, 200, 31, { fill: 'accent' })
+    + t(8, 4, 184, 24, 'SOMETHING WENT WRONG', { f: '18b', c: 'white' })
+    + r(76, 48, 48, 48, { fill: 'light', rad: 10 })
+    + c(92, 66, 4, { fill: 'black' }) + c(108, 66, 4, { fill: 'black' })
+    + r(92, 80, 16, 3, { fill: 'black', rad: 2 })
+    + t(18, 130, 164, 48, 'Phone bridge unavailable', { f: '18b', c: 'black', a: 'center', wrap: true })
+    + t(10, 198, 180, 19, 'SELECT TO SEARCH', { f: '14b', c: 'dark', a: 'center' }),
+},
+{
+  tag: 'ERROR B', title: 'Chromeless, accent eyebrow band', pick: true,
+  why: '<b>Built.</b> Failure keeps its accent \u2014 but only as a thin eyebrow band, so an error can\u2019t be mistaken for an empty list while still matching the chromeless grid. Mascot slot left out pending the S8 decision.',
+  draw: () => r(0, 0, 200, 40, { fill: 'accent' })
+    + t(18, 18, 164, 18, 'SOMETHING WENT WRONG', { f: '14b', c: 'white' })
+    + t(18, 92, 164, 26, 'Phone bridge unavailable', { f: '18b', c: 'black', a: 'center' })
+    + t(18, 120, 164, 36, 'Open dreamwave on your phone\nthen try again', { f: '14', c: 'black', a: 'center', wrap: true })
+    + t(8, 202, 184, 18, 'SELECT retry    BACK close', { f: '14', c: 'black', a: 'center' }),
+},
+]);
+
+/* --- build the page -------------------------------------------------------- */
+document.getElementById('out').innerHTML = SECTIONS.map(sec => `
+  <section>
+    <h2>${sec.name}</h2>
+    <div class="grid">
+      ${sec.items.map(it => `
+        <div class="card${it.ref ? ' ref' : ''}">
+          <h3><span class="tag">${it.tag}</span> ${it.title}${it.pick ? ' <span class="pick">recommended</span>' : ''}</h3>
+          <p class="why">${it.why}</p>
+          <div class="frame"><div class="screen">${it.draw()}</div></div>
+        </div>`).join('')}
+    </div>
+  </section>`).join('');
+
+document.querySelectorAll('.themebar button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.documentElement.style.setProperty('--accent', btn.dataset.accent);
+    document.querySelectorAll('.themebar button')
+      .forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+  });
+});
+</script>
+</body>
+</html>

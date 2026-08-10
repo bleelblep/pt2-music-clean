@@ -1,0 +1,143 @@
+{
+  "name": "dreamwave",
+  "author": "dreamwave",
+  "version": "0.2.0",
+  "private": true,
+  "keywords": [
+    "pebble-app"
+  ],
+  "dependencies": {
+    "@rebble/clay": "^1.0.8"
+  },
+  "pebble": {
+    "displayName": "dreamwave",
+    "uuid": "38d45a52-e0f8-4db0-92ad-1fc852703e69",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "companionApp": {
+      "android": {
+        "url": "https://github.com/MetrolistGroup/Metrolist",
+        "apps": [
+          {
+            "package": "dev.pebble.musicbridge"
+          }
+        ]
+      }
+    },
+    "messageKeys": {
+      "COMMAND": 0,
+      "QUERY": 1,
+      "VIDEO_ID": 2,
+      "AUDIO": 3,
+      "SEQUENCE": 4,
+      "STATUS": 5,
+      "TITLE": 6,
+      "ARTIST": 7,
+      "RESULT_INDEX": 8,
+      "DURATION": 9,
+      "GENERATION": 10,
+      "AUDIO_ROUTE": 11,
+      "VOLUME": 12,
+      "POSITION": 13,
+      "PROTOCOL_VERSION": 14,
+      "CAPABILITIES": 15,
+      "PLAYBACK_STATE": 16,
+      "LOOP_ENABLED": 17,
+      "SEARCH_REQUEST_ID": 18,
+      "CONFIG_AUDIO_ROUTE": 19,
+      "CONFIG_WATCH_VOLUME": 20,
+      "CONFIG_PHONE_VOLUME": 21,
+      "CONFIG_INPUT_MODE": 22,
+      "LIBRARY_TYPE": 23,
+      "LIBRARY_LIMIT": 24,
+      "IS_FAVORITE": 25,
+      "SEARCH_LIMIT": 26,
+      "CONFIG_SHOW_PROGRESS": 27,
+      "CACHE_ENABLED": 28,
+      "CACHE_SIZE_MB": 29,
+      "CONFIG_CACHE_ENABLED": 30,
+      "CONFIG_CACHE_SIZE_MB": 31,
+      "SHUFFLE_ENABLED": 32,
+      "LOOP_MODE": 33,
+      "CONFIG_COVER_ART_BG": 34,
+      "IMAGE_DATA": 35,
+      "IMAGE_WIDTH": 36,
+      "IMAGE_HEIGHT": 37,
+      "IMAGE_SEQUENCE": 38,
+      "IMAGE_TOTAL_BYTES": 39,
+      "THEME": 40,
+      "CONFIG_WATCH_AUDIO_QUALITY": 41,
+      "CONFIG_PHONE_AUDIO_QUALITY": 42,
+      "SEARCH_MODE": 43,
+      "CONFIG_CACHE_RADIO": 44,
+      "ROUTE_EPOCH": 45
+    },
+    "resources": {
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "IMAGE_MENU_ICON",
+          "file": "menu_icon.png",
+          "menuIcon": true
+        },
+        {
+          "type": "bitmap",
+          "name": "IMAGE_DREAMWAVE_HOME_BACKGROUND",
+          "file": "new3.png",
+          "memoryFormat": "8Bit"
+        },
+        {
+          "type": "bitmap",
+          "name": "IMAGE_DREAMWAVE_HOME_BACKGROUND_ALT",
+          "file": "new2.png",
+          "memoryFormat": "8Bit"
+        },
+        {
+          "type": "bitmap",
+          "name": "IMAGE_MONO_HOME_BACKGROUND",
+          "file": "mono_home_background.png",
+          "memoryFormat": "8Bit"
+        },
+        {
+          "type": "bitmap",
+          "name": "IMAGE_MONO_HOME_BACKGROUND_ALT",
+          "file": "mono_home_background_alt.png",
+          "memoryFormat": "8Bit"
+        },
+        {
+          "type": "bitmap",
+          "name": "IMAGE_DREAMWAVE_MASCOT_MODERN",
+          "file": "dreamwave_mascot_modern.png",
+          "memoryFormat": "4BitPalette"
+        },
+        {
+          "type": "bitmap",
+          "name": "IMAGE_DREAMWAVE_MASCOT_DREAMHOUSE",
+          "file": "dreamwave_mascot_dreamhouse.png",
+          "memoryFormat": "4BitPalette"
+        },
+        {
+          "type": "bitmap",
+          "name": "IMAGE_DREAMWAVE_MASCOT_TICKET",
+          "file": "dreamwave_mascot_ticket.png",
+          "memoryFormat": "4BitPalette"
+        },
+        {
+          "type": "bitmap",
+          "name": "IMAGE_DREAMWAVE_MASCOT_HOME",
+          "file": "dreamwave_mascot_home.png",
+          "memoryFormat": "8Bit"
+        }
+      ]
+    },
+    "capabilities": [
+      "configurable"
+    ]
+  }
+}

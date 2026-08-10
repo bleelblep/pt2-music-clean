@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Stylised sound-wave mark on accent background -->
+    <path
+        android:fillColor="#FF00AA"
+        android:pathData="M30,54 L34,54 L38,42 L42,66 L46,30 L50,78 L54,36 L58,72 L62,48 L66,60 L70,54 L78,54 L78,50 L68,50 L64,56 L60,50 L56,68 L52,32 L48,72 L44,38 L40,62 L36,50 L30,50 Z" />
+</vector>

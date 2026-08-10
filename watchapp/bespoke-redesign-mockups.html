@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dreamwave — bespoke redesign mockups</title>
+<style>
+  :root {
+    --accent: #FF00AA;      /* Default theme = GColorFashionMagenta */
+    --page-bg: #14131a;
+    --card-bg: #1e1c26;
+    --edge: #322f3d;
+    --ink: #e9e6f2;
+    --ink-dim: #9c96b0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 28px 80px;
+    background: var(--page-bg);
+    color: var(--ink);
+    font: 15px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  header { max-width: 1100px; margin: 0 auto 8px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.2px; }
+  h2 {
+    font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase;
+    color: var(--ink-dim); margin: 46px 0 4px; font-weight: 600;
+  }
+  .lede { color: var(--ink-dim); max-width: 70ch; margin: 0 0 18px; }
+  .lede code { color: var(--ink); background: #2a2733; padding: 1px 5px; border-radius: 4px; }
+  .themebar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 18px 0 4px; }
+  .themebar span { color: var(--ink-dim); font-size: 13px; margin-right: 4px; }
+  .themebar button {
+    background: var(--card-bg); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 999px; padding: 5px 13px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .themebar button:hover { border-color: var(--ink-dim); }
+  .themebar button[aria-pressed="true"] { border-color: var(--accent); color: #fff; }
+  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+  main { max-width: 1100px; margin: 0 auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(410px, 1fr)); gap: 26px; margin-top: 14px; }
+  .card { background: var(--card-bg); border: 1px solid var(--edge); border-radius: 12px; padding: 18px 18px 16px; }
+  .card.ref { opacity: 0.72; }
+  .card h3 { margin: 0; font-size: 15px; display: flex; align-items: baseline; gap: 9px; }
+  .tag {
+    font: 600 11px/1 "Segoe UI", system-ui, sans-serif; letter-spacing: 1px;
+    background: var(--accent); color: #fff; padding: 4px 7px; border-radius: 4px;
+  }
+  .card.ref .tag { background: #4a4657; }
+  .why { color: var(--ink-dim); font-size: 13.5px; margin: 7px 0 14px; min-height: 40px; }
+
+  /* Emery is 200x228; every screen is authored in real watch pixels and scaled 2x. */
+  .frame { width: 400px; height: 456px; border-radius: 6px; overflow: hidden; background: #fff; }
+  .screen {
+    position: relative; width: 200px; height: 228px; background: #fff; overflow: hidden;
+    transform: scale(2); transform-origin: top left;
+    font-family: "Segoe UI", Roboto, system-ui, sans-serif;
+    font-stretch: 96%;
+  }
+  .screen div { position: absolute; }
+  .screen .tx { letter-spacing: -0.2px; white-space: pre; overflow: hidden; }
+  .screen .wrap { white-space: normal; }
+  footer { max-width: 1100px; margin: 60px auto 0; color: var(--ink-dim); font-size: 13.5px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>dreamwave — bespoke redesign mockups</h1>
+  <p class="lede">
+    Every screen re-drawn in the chromeless language of the bespoke Queue: white ground, dark-gray
+    eyebrow at <code>(18,14)</code>, rounded accent selection, footer band. Rendered at real Emery
+    pixels (200&times;228), scaled 2&times;. <strong>Queue itself is untouched</strong> and included
+    only as the reference. Fonts approximate Pebble Gothic — weights and positions are exact, glyph
+    shapes are not.
+  </p>
+  <div class="themebar">
+    <span>Accent:</span>
+    <button data-accent="#FF00AA" aria-pressed="true"><i class="swatch" style="background:#FF00AA"></i>Default</button>
+    <button data-accent="#00AAAA"><i class="swatch" style="background:#00AAAA"></i>Teal</button>
+    <button data-accent="#AA55AA"><i class="swatch" style="background:#AA55AA"></i>Purple</button>
+    <button data-accent="#FF5555"><i class="swatch" style="background:#FF5555"></i>Sunset</button>
+    <button data-accent="#000000"><i class="swatch" style="background:#000;outline:1px solid #555"></i>Mono</button>
+  </div>
+</header>
+
+<main id="out"></main>
+
+<footer>
+  Pick by label — e.g. &ldquo;HOME&nbsp;B, SETTINGS&nbsp;A, NOW&nbsp;PLAYING&nbsp;C&rdquo; — and I&rsquo;ll build those into
+  <code>watchapp/src/c/main.c</code> behind the existing hidden Advanced toggles.
+</footer>
+
+<script>
+/* ---------------------------------------------------------------------------
+   Tiny renderer. Screens are authored as flat lists of primitives in watch
+   coordinates so the numbers here transfer straight into the C draw_* calls.
+   --------------------------------------------------------------------------- */
+const COLORS = {
+  accent: 'var(--accent)',
+  black:  '#000000',
+  white:  '#FFFFFF',
+  dark:   '#555555',   // GColorDarkGray
+  light:  '#AAAAAA',   // GColorLightGray
+};
+const FONTS = {
+  '14':  'normal 14px',  '14b': 'bold 14px',
+  '18':  'normal 18px',  '18b': 'bold 18px',
+  '24b': 'bold 24px',    '28b': 'bold 28px',
+};
+const col = v => COLORS[v] || v;
+
+/* text box: matches draw_text(ctx, s, font, color, GRect(x,y,w,h), align) */
+function t(x, y, w, h, text, o = {}) {
+  const f = FONTS[o.f || '18'];
+  return `<div class="tx ${o.wrap ? 'wrap' : ''}" style="
+    left:${x}px; top:${y - 2}px; width:${w}px; height:${h}px;
+    font:${f}/1.15 inherit; color:${col(o.c || 'black')};
+    text-align:${o.a || 'left'};"><span>${text}</span></div>`;
+}
+/* filled rect: graphics_fill_rect(ctx, GRect(...), radius, corners) */
+function r(x, y, w, h, o = {}) {
+  return `<div style="
+    left:${x}px; top:${y}px; width:${w}px; height:${h}px;
+    background:${o.fill ? col(o.fill) : 'transparent'};
+    border-radius:${o.rad || 0}px;
+    ${o.stroke ? `border:${o.sw || 1}px solid ${col(o.stroke)};` : ''}"></div>`;
+}
+/* filled circle: graphics_fill_circle(ctx, GPoint(cx,cy), r) */
+function c(cx, cy, rad, o = {}) {
+  return r(cx - rad, cy - rad, rad * 2, rad * 2, { ...o, rad: rad });
+}
+
+/* Shared furniture ------------------------------------------------------- */
+const eyebrow = label => t(18, 14, 164, 18, label, { f: '14b', c: 'dark' });
+const footerHint = txt => t(8, 204, 184, 18, txt, { f: '14', c: 'black', a: 'center' });
+const scrollbar = (top, h, thumbTop, thumbH) =>
+  r(194, top, 4, h, { fill: 'light', rad: 2 }) + r(194, thumbTop, 4, thumbH, { fill: 'accent', rad: 2 });
+
+/* A two-line row in the Queue idiom. */
+function row2(y, title, sub, sel, opts = {}) {
+  const h = opts.h || 34;
+  return (sel ? r(5, y, 190, h, { fill: 'accent', rad: 4 }) : '')
+    + t(12, y - 1, 176, 22, title, { f: '18b', c: sel ? 'white' : (opts.tc || 'black') })
+    + t(12, y + 17, 176, 16, sub, { f: '14', c: sel ? 'white' : 'dark' });
+}
+/* A single-line row: label left, optional value right. */
+function row1(y, label, value, sel, opts = {}) {
+  const h = opts.h || 26;
+  return (sel ? r(5, y, 190, h, { fill: 'accent', rad: 4 }) : '')
+    + t(12, y + 3, value ? 120 : 176, 20, label, { f: '18b', c: sel ? 'white' : 'black' })
+    + (value ? t(132, y + 5, 56, 18, value, { f: '14b', c: sel ? 'white' : 'accent', a: 'right' }) : '');
+}
+
+/* ===========================================================================
+   SCREENS
+   =========================================================================== */
+const SECTIONS = [];
+const S = (name, items) => SECTIONS.push({ name, items });
+
+/* --- HOME ---------------------------------------------------------------- */
+S('Home', [
+{
+  tag: 'HOME A', title: 'List + subtitles',
+  why: 'What is in the build now. Two-line rows say what each destination holds; footer shows the current track. Most informative, densest.',
+  draw: () => eyebrow('DREAMWAVE')
+    + row2(44,  'Search',   'Songs, artists, radio', false)
+    + row2(82,  'Library',  'Recent, cached, saved', true)
+    + row2(120, 'Settings', 'Output, volume, more',  false)
+    + row2(158, 'About',    'Version and credits',   false)
+    + t(8, 204, 184, 18, 'Midnight City', { f: '14', c: 'accent', a: 'center' }),
+},
+{
+  tag: 'HOME B', title: 'Now-playing card',
+  why: 'Trades the subtitles for a real now-playing surface at the top — the one thing you actually come back to Home for. Rows go single-line to make room.',
+  draw: () => eyebrow('DREAMWAVE')
+    + r(5, 36, 190, 44, { fill: 'accent', rad: 6 })
+    + t(14, 42, 172, 16, 'NOW PLAYING', { f: '14b', c: 'white' })
+    + t(14, 58, 172, 20, 'Midnight City', { f: '18b', c: 'white' })
+    + row1(92,  'Search',   null, false)
+    + row1(122, 'Library',  null, true)
+    + row1(152, 'Settings', null, false)
+    + row1(182, 'About',    null, false),
+},
+{
+  tag: 'HOME C', title: 'Big type, edge marker',
+  why: 'No pills, no subtitles. Selection is a thick accent bar on the left edge. Quietest and most legible in motion; loses the now-playing readout.',
+  draw: () => eyebrow('DREAMWAVE')
+    + r(0, 48, 6, 34, { fill: 'accent' })
+    + t(18, 52, 170, 28, 'Search',   { f: '24b', c: 'black' })
+    + t(18, 92, 170, 28, 'Library',  { f: '24b', c: 'light' })
+    + t(18, 132, 170, 28, 'Settings', { f: '24b', c: 'light' })
+    + t(18, 172, 170, 28, 'About',    { f: '24b', c: 'light' })
+    + footerHint('SELECT open'),
+},
+]);
+
+/* --- MENU ---------------------------------------------------------------- */
+S('Menu (DREAMWAVE)', [
+{
+  tag: 'MENU A', title: 'Plain rows',
+  why: 'The stock four-item menu in bespoke dress. Only reachable in Art home layout, so it stays deliberately plain.',
+  draw: () => eyebrow('DREAMWAVE')
+    + row1(44,  'Search',   null, true)
+    + row1(78,  'Library',  null, false)
+    + row1(112, 'Settings', null, false)
+    + row1(146, 'About',    null, false)
+    + footerHint('SELECT open    BACK home'),
+},
+{
+  tag: 'MENU B', title: 'Index chips',
+  why: 'A small accent chip carries the row number, so the eye can count position without reading. Helps when scrolling blind by feel.',
+  draw: () => eyebrow('DREAMWAVE')
+    + [['Search', 1], ['Library', 2], ['Settings', 3], ['About', 4]].map(([label, n], i) => {
+        const y = 44 + i * 34, sel = i === 0;
+        return (sel ? r(5, y, 190, 28, { fill: 'accent', rad: 4 }) : '')
+          + r(12, y + 5, 18, 18, { fill: sel ? 'white' : 'light', rad: 4 })
+          + t(12, y + 8, 18, 14, String(n), { f: '14b', c: sel ? 'accent' : 'white', a: 'center' })
+          + t(38, y + 6, 150, 20, label, { f: '18b', c: sel ? 'white' : 'black' });
+      }).join('')
+    + footerHint('SELECT open    BACK home'),
+},
+]);
+
+/* --- LIBRARY ------------------------------------------------------------- */
+S('Library', [
+{
+  tag: 'LIBRARY A', title: 'Counts as subtitle',
+  why: 'Each section states its size on the second line, so an empty Favorites is obvious before you open it.',
+  draw: () => eyebrow('LIBRARY')
+    + row2(40,  'Recently Played', '20 songs', false)
+    + row2(78,  'Cached Music',    '14 songs', true)
+    + row2(116, 'Favorites',       '3 songs',  false)
+    + row2(154, 'Continue',        '2 songs',  false)
+    + scrollbar(40, 158, 40, 120)
+    + footerHint('SELECT open'),
+},
+{
+  tag: 'LIBRARY B', title: 'Count on the right',
+  why: 'Single-line rows with a right-aligned count. Fits all five sections without scrolling once Library extras is on.',
+  draw: () => eyebrow('LIBRARY')
+    + row1(40,  'Recently Played', '20', false)
+    + row1(72,  'Cached Music',    '14', true)
+    + row1(104, 'Favorites',       '3',  false)
+    + row1(136, 'Continue',        '2',  false)
+    + row1(168, 'Recent Searches', '10', false)
+    + footerHint('SELECT open'),
+},
+]);
+
+/* --- SONG LISTS ---------------------------------------------------------- */
+S('Song lists (Results / Library items)', [
+{
+  tag: 'LIST A', title: 'Queue-matched',
+  why: 'Identical geometry to the bespoke Queue so every song list in the app reads the same. Safest, most consistent.',
+  draw: () => eyebrow('SEARCH RESULTS')
+    + row2(40,  'Midnight City',   'M83',            false, { h: 39 })
+    + row2(83,  'Digital Love',    'Daft Punk',      true,  { h: 39 })
+    + row2(126, 'Nightcall',       'Kavinsky',       false, { h: 39 })
+    + row2(169, 'Instant Crush',   'Daft Punk',      false, { h: 39 })
+    + scrollbar(40, 158, 40, 96)
+    + footerHint('SELECT play    BACK close'),
+},
+{
+  tag: 'LIST B', title: 'Cached / playing markers',
+  why: 'A filled accent dot marks the current track, a hollow one marks cached-on-watch. Tells you what plays instantly with no signal.',
+  draw: () => eyebrow('SEARCH RESULTS')
+    + [['Midnight City', 'M83', 'playing'], ['Digital Love', 'Daft Punk', 'cached'],
+       ['Nightcall', 'Kavinsky', ''], ['Instant Crush', 'Daft Punk', 'cached']]
+      .map(([title, artist, mark], i) => {
+        const y = 40 + i * 43, sel = i === 1;
+        return (sel ? r(5, y, 190, 39, { fill: 'accent', rad: 4 }) : '')
+          + (mark === 'playing' ? c(15, y + 12, 4, { fill: sel ? 'white' : 'accent' }) : '')
+          + (mark === 'cached'  ? c(15, y + 12, 4, { stroke: sel ? 'white' : 'light', sw: 2 }) : '')
+          + t(mark ? 25 : 12, y + 1, mark ? 163 : 176, 22, title, { f: '18b', c: sel ? 'white' : 'black' })
+          + t(mark ? 25 : 12, y + 20, mark ? 163 : 176, 18, artist, { f: '14', c: sel ? 'white' : 'dark' });
+      }).join('')
+    + scrollbar(40, 158, 40, 96)
+    + footerHint('SELECT play    BACK close'),
+},
+]);
+
+/* --- SEARCH TYPE --------------------------------------------------------- */
+S('Search type', [
+{
+  tag: 'SEARCH A', title: 'Described rows',
+  why: 'Artist Radio and Song Radio are not self-explanatory. The second line says what each will actually queue up.',
+  draw: () => eyebrow('SEARCH')
+    + row2(48,  'Song Search',  'Find one track',        true)
+    + row2(94,  'Artist Radio', "An artist's catalogue", false)
+    + row2(140, 'Song Radio',   'Similar songs, in order', false)
+    + footerHint('SELECT choose'),
+},
+{
+  tag: 'SEARCH B', title: 'Stacked cards',
+  why: 'Three tall bordered cards — a heavier, more deliberate pick for a screen you only touch at the start of a session.',
+  draw: () => eyebrow('SEARCH')
+    + [['Song Search', 'Find one track', true], ['Artist Radio', "An artist's catalogue", false],
+       ['Song Radio', 'Similar songs, in order', false]]
+      .map(([title, sub, sel], i) => {
+        const y = 44 + i * 50;
+        return r(8, y, 184, 44, sel ? { fill: 'accent', rad: 6 } : { stroke: 'light', sw: 2, rad: 6 })
+          + t(18, y + 7, 164, 22, title, { f: '18b', c: sel ? 'white' : 'black' })
+          + t(18, y + 26, 164, 16, sub, { f: '14', c: sel ? 'white' : 'dark' });
+      }).join(''),
+},
+]);
+
+/* --- SETTINGS ------------------------------------------------------------ */
+S('Settings', [
+{
+  tag: 'SETTINGS A', title: 'Value right, accent',
+  why: 'Label left, current value right in accent. Scans as a column of values — quickest to confirm state at a glance.',
+  draw: () => eyebrow('SETTINGS')
+    + row1(40,  'Output',       'Watch', true)
+    + row1(70,  'Watch volume', '70%',   false)
+    + row1(100, 'Phone volume', '50%',   false)
+    + row1(130, 'Input',        'Ask',   false)
+    + row1(160, 'Progress bar', 'On',    false)
+    + footerHint('SELECT change'),
+},
+{
+  tag: 'SETTINGS B', title: 'Value as subtitle',
+  why: 'Two-line rows put the value under the label, so long values (Data Saver, Dreamwave Teal) never get squeezed or clipped.',
+  draw: () => eyebrow('SETTINGS')
+    + row2(40,  'Output',       'Watch speaker', true)
+    + row2(78,  'Watch volume', '70%',           false)
+    + row2(116, 'Phone volume', '50%',           false)
+    + row2(154, 'Input',        'Ask each time', false)
+    + scrollbar(40, 158, 40, 120)
+    + footerHint('SELECT change'),
+},
+]);
+
+/* --- ADVANCED ------------------------------------------------------------ */
+S('Advanced', [
+{
+  tag: 'ADVANCED A', title: 'Flat value list',
+  why: 'Thirteen rows, same idiom as Settings A. Long list, but nothing to learn — matches the screen above it.',
+  draw: () => eyebrow('ADVANCED')
+    + row1(40,  'Keyboard',      'Grid',    false)
+    + row1(70,  'History',       '20',      false)
+    + row1(100, 'Results',       '5',       true)
+    + row1(130, 'Theme',         'Default', false)
+    + row1(160, 'Home style',    'Unicorn', false)
+    + scrollbar(40, 158, 66, 62)
+    + footerHint('SELECT change'),
+},
+{
+  tag: 'ADVANCED B', title: 'Grouped',
+  why: 'Tiny section eyebrows break thirteen settings into Interface / Audio / Storage. Costs vertical space, makes the list findable.',
+  draw: () => eyebrow('ADVANCED')
+    + t(18, 38, 164, 14, 'INTERFACE', { f: '14b', c: 'light' })
+    + row1(54,  'Keyboard',   'Grid',    false)
+    + row1(84,  'Theme',      'Default', true)
+    + row1(114, 'Home layout', 'List',   false)
+    + t(18, 148, 164, 14, 'AUDIO', { f: '14b', c: 'light' })
+    + row1(164, 'Watch quality', 'Balanced', false)
+    + scrollbar(38, 160, 38, 70)
+    + footerHint('SELECT change'),
+},
+]);
+
+/* --- NOW PLAYING --------------------------------------------------------- */
+const npControls = (y, playY) =>
+  /* shuffle */ r(20, y - 5, 14, 3, { fill: 'accent' }) + r(20, y + 3, 14, 3, { fill: 'accent' })
+  /* play    */ + c(95, playY, 18, { stroke: 'black', sw: 2 })
+  + `<div style="left:${95 - 4}px; top:${playY - 7}px; width:0; height:0;
+       border-left:11px solid #000; border-top:7px solid transparent; border-bottom:7px solid transparent;"></div>`
+  /* repeat  */ + r(136, y - 5, 14, 3, { fill: 'light' }) + r(136, y + 3, 14, 3, { fill: 'light' });
+
+S('Now Playing', [
+{
+  tag: 'NOW PLAYING A', title: 'Current layout, tidied',
+  why: 'Today’s geometry with the gesture affordances gone: source row, 28px title, artist, progress, controls. Nothing to relearn.',
+  draw: () => c(24, 25, 5, { stroke: 'dark', sw: 2 })
+    + t(38, 16, 134, 18, 'on watch', { f: '14b', c: 'dark' })
+    + t(18, 47, 154, 64, 'Midnight\nCity', { f: '28b', c: 'black', wrap: true })
+    + t(18, 113, 154, 24, 'M83', { f: '18', c: 'dark' })
+    + r(18, 149, 154, 5, { fill: 'light', rad: 3 }) + r(18, 149, 92, 5, { fill: 'accent', rad: 3 })
+    + t(18, 158, 77, 18, '2:31', { f: '14b', c: 'black' })
+    + t(95, 158, 77, 18, '4:03', { f: '14b', c: 'black', a: 'right' })
+    + npControls(200, 200),
+},
+{
+  tag: 'NOW PLAYING B', title: 'Progress under source',
+  why: 'Moves the scrubber to the top so title and artist own the middle uninterrupted. Elapsed/total sit beside the source label.',
+  draw: () => c(24, 22, 5, { stroke: 'dark', sw: 2 })
+    + t(38, 13, 90, 18, 'on watch', { f: '14b', c: 'dark' })
+    + t(102, 13, 80, 18, '2:31 / 4:03', { f: '14b', c: 'dark', a: 'right' })
+    + r(18, 36, 154, 4, { fill: 'light', rad: 2 }) + r(18, 36, 92, 4, { fill: 'accent', rad: 2 })
+    + t(18, 62, 154, 68, 'Midnight\nCity', { f: '28b', c: 'black', wrap: true })
+    + t(18, 132, 154, 24, 'M83', { f: '18', c: 'dark' })
+    + npControls(196, 196),
+},
+{
+  tag: 'NOW PLAYING C', title: 'Over artwork, scrim',
+  why: 'Cover art full-bleed with a solid bottom band carrying the text and controls, so light album art can never wash out the UI.',
+  draw: () => r(0, 0, 200, 228, { fill: '#2b2b3d' })
+    + r(28, 18, 144, 110, { fill: '#4a4a6a', rad: 4 })
+    + c(100, 66, 26, { fill: '#5f5f88' }) + c(100, 66, 8, { fill: '#2b2b3d' })
+    + r(0, 136, 200, 92, { fill: 'black' })
+    + t(18, 144, 164, 24, 'Midnight City', { f: '18b', c: 'white' })
+    + t(18, 165, 164, 18, 'M83  ·  on watch', { f: '14', c: 'light' })
+    + r(18, 188, 154, 4, { fill: 'dark', rad: 2 }) + r(18, 188, 92, 4, { fill: 'accent', rad: 2 })
+    + r(20, 203, 14, 3, { fill: 'accent' }) + r(20, 211, 14, 3, { fill: 'accent' })
+    + c(95, 208, 15, { stroke: 'white', sw: 2 })
+    + `<div style="left:91px; top:202px; width:0; height:0;
+         border-left:10px solid #fff; border-top:6px solid transparent; border-bottom:6px solid transparent;"></div>`
+    + r(136, 203, 14, 3, { fill: 'dark' }) + r(136, 211, 14, 3, { fill: 'dark' }),
+},
+]);
+
+/* --- TRANSIENT ----------------------------------------------------------- */
+S('Searching / Buffering', [
+{
+  tag: 'STATUS A', title: 'Typographic',
+  why: 'No mascot. Eyebrow, a large status line, and three accent dots that animate. Loads instantly and never fails to allocate a bitmap.',
+  draw: () => eyebrow('SEARCH')
+    + t(18, 92, 164, 30, 'Searching', { f: '24b', c: 'black' })
+    + t(18, 122, 164, 20, 'daft punk', { f: '18', c: 'dark' })
+    + c(84, 160, 5, { fill: 'accent' }) + c(100, 160, 5, { fill: 'light' }) + c(116, 160, 5, { fill: 'light' })
+    + footerHint('BACK cancel'),
+},
+{
+  tag: 'STATUS B', title: 'Mascot kept',
+  why: 'Keeps the existing mascot as the app’s one moment of personality, with bespoke type underneath. Costs a resident bitmap.',
+  draw: () => eyebrow('SEARCH')
+    + r(66, 54, 68, 68, { fill: 'accent', rad: 34 })
+    + c(86, 78, 5, { fill: 'white' }) + c(114, 78, 5, { fill: 'white' })
+    + r(84, 98, 32, 5, { fill: 'white', rad: 3 })
+    + t(18, 136, 164, 26, 'Searching...', { f: '18b', c: 'black', a: 'center' })
+    + t(18, 158, 164, 20, 'daft punk', { f: '14', c: 'dark', a: 'center' })
+    + footerHint('BACK cancel'),
+},
+]);
+
+/* --- ABOUT --------------------------------------------------------------- */
+S('About', [
+{
+  tag: 'ABOUT A', title: 'Spec rows',
+  why: 'Version, build and bridge state as label/value rows. The VERSION row is still the 7× SELECT unlock target.',
+  draw: () => eyebrow('ABOUT')
+    + row1(44,  'Version', '0.2.0', true)
+    + row1(76,  'Watch',   'Emery', false)
+    + row1(108, 'Bridge',  'Ready', false)
+    + row1(140, 'Cache',   '14 songs', false)
+    + t(18, 180, 164, 18, 'Built for Pebble Time 2', { f: '14', c: 'light' })
+    + footerHint('BACK close'),
+},
+{
+  tag: 'ABOUT B', title: 'Wordmark',
+  why: 'Centred wordmark over a version line — treats About as a title card rather than a spec sheet.',
+  draw: () => r(0, 0, 200, 96, { fill: 'accent' })
+    + t(18, 38, 164, 32, 'dreamwave', { f: '28b', c: 'white', a: 'center' })
+    + t(18, 112, 164, 24, 'Version 0.2.0', { f: '18b', c: 'black', a: 'center' })
+    + t(18, 136, 164, 20, 'Emery · bridge ready', { f: '14', c: 'dark', a: 'center' })
+    + t(18, 176, 164, 18, 'Built for Pebble Time 2', { f: '14', c: 'light', a: 'center' })
+    + footerHint('BACK close'),
+},
+]);
+
+/* --- EMPTY / ERROR ------------------------------------------------------- */
+S('Empty & error states', [
+{
+  tag: 'EMPTY A', title: 'Quiet',
+  why: 'Message plus the one action that resolves it. Same eyebrow and footer as every other screen, so it never feels like a crash.',
+  draw: () => eyebrow('CACHED MUSIC')
+    + t(18, 96, 164, 26, 'No cached songs', { f: '18b', c: 'black', a: 'center' })
+    + t(18, 120, 164, 36, 'Play something and it\nlands here', { f: '14', c: 'dark', a: 'center', wrap: true })
+    + footerHint('BACK close'),
+},
+{
+  tag: 'ERROR B', title: 'Accent band',
+  why: 'A full-width accent band makes a real failure impossible to mistake for an empty list, while keeping the same skeleton.',
+  draw: () => r(0, 0, 200, 46, { fill: 'accent' })
+    + t(18, 14, 164, 20, 'CAN’T REACH PHONE', { f: '14b', c: 'white' })
+    + t(18, 96, 164, 26, 'No playable source', { f: '18b', c: 'black', a: 'center' })
+    + t(18, 120, 164, 36, 'Check the dreamwave app\nis running', { f: '14', c: 'dark', a: 'center', wrap: true })
+    + footerHint('SELECT retry    BACK close'),
+},
+]);
+
+/* --- QUEUE (reference) --------------------------------------------------- */
+S('Queue — unchanged reference', [
+{
+  tag: 'QUEUE', title: 'Shipping bespoke queue', ref: true,
+  why: 'Left exactly as built. Every screen above borrows its eyebrow position, 43px row pitch, 4px selection radius, scrollbar and footer band.',
+  draw: () => eyebrow('QUEUE')
+    + row2(40,  'Midnight City', 'M83',       false, { h: 39, tc: 'accent' })
+    + row2(83,  'Digital Love',  'Daft Punk', true,  { h: 39 })
+    + row2(126, 'Nightcall',     'Kavinsky',  false, { h: 39 })
+    + row2(169, 'Instant Crush', 'Daft Punk', false, { h: 39 })
+    + scrollbar(40, 158, 40, 96)
+    + footerHint('SELECT jump    BACK close'),
+},
+]);
+
+/* --- build the page ------------------------------------------------------ */
+document.getElementById('out').innerHTML = SECTIONS.map(sec => `
+  <section>
+    <h2>${sec.name}</h2>
+    <div class="grid">
+      ${sec.items.map(it => `
+        <div class="card${it.ref ? ' ref' : ''}">
+          <h3><span class="tag">${it.tag}</span> ${it.title}</h3>
+          <p class="why">${it.why}</p>
+          <div class="frame"><div class="screen">${it.draw()}</div></div>
+        </div>`).join('')}
+    </div>
+  </section>`).join('');
+
+document.querySelectorAll('.themebar button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.documentElement.style.setProperty('--accent', btn.dataset.accent);
+    document.querySelectorAll('.themebar button')
+      .forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+  });
+});
+</script>
+</body>
+</html>
