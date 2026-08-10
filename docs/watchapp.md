@@ -34,8 +34,6 @@ Two input methods (**Input mode**):
 - **Voice search** (default) — Pebble dictation.
 - **Keyboard** — on-watch text entry. **Grid** (a 3×3 swipe keyboard, `lib/grid_keyboard/`, self-contained) on the Time 2, **Classic** otherwise. The keyboard option is hidden until Advanced is unlocked.
 
-Recent searches are remembered (configurable limit) and shown under Library → Recent Searches.
-
 ## Library
 
 | Section | Contents |
@@ -44,14 +42,12 @@ Recent searches are remembered (configurable limit) and shown under Library → 
 | **Cached Music** | Tracks cached on the phone, playable without re-resolving. |
 | **Favorites** | Tracks starred from Now Playing. |
 | **Playlists** | Playlists created/managed in the companion app. |
-| **Continue** | Resume points — tracks with a saved playback position. |
-| **Recent Searches** | Past queries; selecting one re-runs it. |
 
 **Library extras** (Advanced) toggles additional sections.
 
 ## Now Playing
 
-- Cover art, pushed from the phone (encoded on-device by the companion's Go bridge) with an optional **blurred cover-art background**.
+- Cover art, pushed from the phone (encoded on-device by the companion's Go bridge).
 - Optional **progress bar** (**Show progress**).
 - Transport: play/pause, next/previous, **shuffle**, and **loop** (off / one / all).
 - **Independent volume** for the watch speaker and the phone.
@@ -86,7 +82,6 @@ Route changes carry a monotonic **route epoch**, so a stale route message from e
 | | Theme | theme name |
 | | Home style | Kiwi / Unicorn |
 | | Home quotes | Show / Hide |
-| | Cover art bg | On / Off |
 | LIBRARY | History | N songs |
 | | Results | N |
 | | Library extras | On / Off |

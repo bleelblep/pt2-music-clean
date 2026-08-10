@@ -48,7 +48,7 @@ Audio can be routed two ways, switchable from either device:
 
 ### ⌚ Watchapp
 - Browse Home / Library, search YouTube Music (song, artist radio, song radio), full transport controls
-- Cover-art display with optional blurred background, progress bar, queue view
+- Cover-art display, progress bar, queue view
 - Voice search by default; on-watch grid keyboard unlockable via **About → SELECT ×7 on the version row**
 - Independent watch/phone volume, per-route audio quality, shuffle & loop sync, favorites & playlists
 - Bespoke or stock UI, "Dreamwave Teal" theme, home styles, home quotes
