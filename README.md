@@ -47,17 +47,22 @@ Audio can be routed two ways, switchable from either device:
 ## Features
 
 ### ⌚ Watchapp
-- Browse Home / Library, search YouTube Music, full transport controls
-- Cover-art display with optional blurred cover-art background
-- Voice search by default; on-watch keyboard (grid layout on PT2, classic elsewhere) unlockable via **About → SELECT ×7 on the version row**
-- Independent watch/phone volume, per-route audio quality, shuffle & loop sync
-- "Dreamwave Teal" theme, home-screen quotes, progress bar toggle, cache radio
+- Browse Home / Library, search YouTube Music (song, artist radio, song radio), full transport controls
+- Cover-art display with optional blurred background, progress bar, queue view
+- Voice search by default; on-watch grid keyboard unlockable via **About → SELECT ×7 on the version row**
+- Independent watch/phone volume, per-route audio quality, shuffle & loop sync, favorites & playlists
+- Bespoke or stock UI, "Dreamwave Teal" theme, home styles, home quotes
+
+**→ [In-depth watchapp docs](docs/watchapp.md)**
 
 ### 📱 Companion
 - Full player UI vendored from PixelPlayer — Home, Library, Search, Cache and Now Playing screens
 - YouTube Music resolution via `innertube` + PipePipe Extractor
 - On-phone cover-art encoding for the watch (Go `watchimagebridge`, bound via gomobile)
-- Foreground media service with notification controls, on-device stream cache
+- Versioned watch wire protocol with capability negotiation and conflict-free route switching
+- Foreground media service with notification controls, on-device stream cache, resume positions
+
+**→ [In-depth companion docs](docs/companion.md)**
 
 ## Layout
 
@@ -68,6 +73,7 @@ Audio can be routed two ways, switchable from either device:
 | `pebble-companion/` | Android companion app — playback, streaming, PebbleKit transport |
 | `innertube/` | YouTube Music API client, from Metrolist (GPL-3.0) |
 | `watchimage-bridge/` | Go source for `watchimagebridge.aar` (cover-art encoding) |
+| `docs/` | In-depth docs: [watchapp](docs/watchapp.md), [companion](docs/companion.md) |
 | `licenses/` | Full license texts for all upstreams |
 
 ## Install
