@@ -22,6 +22,31 @@ enum class ThemeMode(val label: String) {
 object UiPrefs {
     private const val PREFS_NAME = "dreamwave_ui"
     private const val KEY_THEME_MODE = "theme_mode"
+    private const val KEY_APP_THEME = "app_theme"
+
+    /** [appTheme] value meaning "whatever the watch is set to", the default. */
+    const val FOLLOW_WATCH = -1
+
+    /**
+     * The phone's own theme, or [FOLLOW_WATCH].
+     *
+     * The phone used to be strictly slaved to the watch's theme, which is a fine
+     * default and a bad rule: the two have completely different displays, and a
+     * palette built for a 64-colour reflective LCD in daylight is not automatically
+     * the one you want on an OLED phone. This lets them diverge while still keeping
+     * every choice on the phone drawn from the watch's own palettes, so picking one
+     * here is picking a *watch* theme to wear on the phone, not a separate identity.
+     */
+    fun appTheme(context: Context): Int =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_APP_THEME, FOLLOW_WATCH)
+
+    fun setAppTheme(context: Context, theme: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_APP_THEME, theme)
+            .apply()
+    }
 
     fun themeMode(context: Context): ThemeMode {
         val stored = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

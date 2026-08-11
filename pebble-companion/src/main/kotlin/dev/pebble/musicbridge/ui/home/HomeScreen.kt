@@ -60,7 +60,6 @@ import dev.pebble.musicbridge.ui.components.LocalFloatingChromeInset
 import dev.pebble.musicbridge.ui.components.RowMenuItem
 import dev.pebble.musicbridge.ui.components.SquircleShape
 import dev.pebble.musicbridge.ui.components.StatusPill
-import dev.pebble.musicbridge.ui.theme.ThemeMode
 
 /**
  * Home, in upstream's idiom rather than a shelf-of-carousels.
@@ -82,6 +81,7 @@ fun HomeScreen(
     viewModel: DreamwaveViewModel,
     onOpenCache: () -> Unit,
     onOpenInfo: () -> Unit,
+    onOpenAppearance: () -> Unit,
     onOpenLibrary: () -> Unit,
 ) {
     val recent by viewModel.recentlyPlayed.collectAsState()
@@ -89,7 +89,6 @@ fun HomeScreen(
     val cache by viewModel.cacheState.collectAsState()
     val playing by viewModel.uiState.collectAsState()
     val artworkUrls by viewModel.artworkUrls.collectAsState()
-    val themeMode by viewModel.themeMode.collectAsState()
     val scheme = MaterialTheme.colorScheme
 
     LaunchedEffect(Unit) {
@@ -191,16 +190,8 @@ fun HomeScreen(
                         }
                         MenuAction(
                             icon = R.drawable.rounded_palette_24,
-                            label = "Appearance: ${themeMode.label}",
-                            onClick = {
-                                viewModel.setThemeMode(
-                                    when (themeMode) {
-                                        ThemeMode.SYSTEM -> ThemeMode.LIGHT
-                                        ThemeMode.LIGHT -> ThemeMode.DARK
-                                        ThemeMode.DARK -> ThemeMode.SYSTEM
-                                    }
-                                )
-                            },
+                            label = "Appearance",
+                            onClick = onOpenAppearance,
                         )
                         MenuAction(
                             icon = R.drawable.rounded_storage_24,

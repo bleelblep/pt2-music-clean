@@ -33,6 +33,8 @@
 #define LEGACY_THEME_KEY 25  // Reserved/unused - see s_legacy_theme's comment.
 #define BESPOKE_UI_KEY 27
 #define ROUTE_EPOCH_KEY 28
+#define BACK_STOPS_KEY 29
+#define SOPHIE_MODE_KEY 30
 #define MSG_CONFIG_SHOW_PROGRESS 27
 #define MSG_CACHE_ENABLED 28
 #define MSG_CACHE_SIZE_MB 29
@@ -109,12 +111,16 @@ typedef enum {
   ScreenQueue,
 } AppScreen;
 
+// Keep in step with package.json - both About screens print it.
+#define APP_VERSION "0.5.0"
+
 typedef enum {
   ThemeTeal = 0,
   ThemePurple = 1,
   ThemeSunset = 2,
   ThemeDefault = 3,
   ThemeMono = 4,   // Black & white theme.
+  ThemeArcade = 5,  // Inverted: cyan on hot pink. Bespoke UI only.
 } AppTheme;
 
 typedef enum {
@@ -122,6 +128,25 @@ typedef enum {
   InputKeyboard,
   InputAsk,
 } InputMode;
+
+// "Sophie mode": swaps every piece of type in the app for LynoJean. It rides with the
+// Mono theme and is only offered there - the face is a display cut, and it holds
+// together on black and white in a way it does not against the colored grounds.
+//
+// The four sizes below are every size the app draws at; bold and regular both land on
+// the same face, since the file has one weight. They are loaded on demand rather than
+// at startup, because four rasterized faces is real heap and nobody who leaves this
+// off should pay for it.
+typedef enum {
+  SophieFont14,
+  SophieFont18,
+  SophieFont24,
+  SophieFont28,
+  SophieFontCount,
+} SophieFontSize;
+
+static bool s_sophie_mode;
+static GFont s_sophie_fonts[SophieFontCount];
 
 typedef enum {
   SearchModeSong,
@@ -204,6 +229,12 @@ typedef struct {
   GColor background;
   GColor foreground;
   GColor accent;
+  // Ink for text and glyphs sitting on top of the accent - selected rows, the dock
+  // and More discs, the play button. White is not automatically right: these accents
+  // are mid-tone, and white on Tiffany Blue or Sunset Orange is barely 3:1 where
+  // black clears 6:1. Chosen per theme rather than derived, so Arcade can invert to
+  // its own ground color instead of introducing a third one.
+  GColor on_accent;
   GColor secondary;
   GColor surface;
   // Resting (unpressed) colors for the action-bar rail (Home / Now Playing /
@@ -253,8 +284,8 @@ static bool s_extra_library;
 // When disabled, the Home banner box (rotating quotes) is hidden entirely,
 // leaving just the background art. Useful for a cleaner/quieter Home screen.
 static bool s_show_home_quotes = true;
-static uint8_t s_history_limit = HISTORY_LIMIT_MIN;
-static uint8_t s_search_limit = 5;   // Search result count: toggles between 5 and 10.
+static uint8_t s_history_limit = HISTORY_LIMIT_MAX;
+static uint8_t s_search_limit = 10;  // Search result count: toggles between 5 and 10.
 static uint8_t s_recent_search_limit = RECENT_SEARCH_LIMIT_DEFAULT;  // Recent Searches display count.
 // Heap-allocated in init() (see the call site). ~14.6 KB of rows: as a static array
 // this counts against the 64 KB app virtual-size limit (a uint16 field in the app
@@ -313,9 +344,16 @@ static bool s_shuffle_enabled;
 static bool s_current_favorite;   // Whether the currently loaded track is favorited.
 static bool s_phone_audio;
 static bool s_show_progress = true;
+// Whether backing out of Now Playing tears the stream down. On is how the app always
+// behaved; off leaves the track running so Back is pure navigation and Home keeps its
+// hero, which is now the default - Home's card is built around there being something
+// playing to show. See back_click().
+static bool s_back_stops = false;
 static bool s_cache_enabled = true;
 static uint16_t s_cache_size_mb = 250;
-static bool s_cache_radio = true;
+// Off by default: radio is endless and effectively unrepeatable, so caching it spends
+// the budget on tracks you are least likely to hear again.
+static bool s_cache_radio = false;
 // Defaults on: album art is the point of the now-playing screen, and the companion
 // ships the same default so a watch that has never pushed its settings still gets art.
 static bool s_cover_art_background = true;
@@ -363,9 +401,9 @@ typedef enum {
   FeedbackShuffleOn,
   FeedbackShuffleOff,
   FeedbackKeyboardHint,
-  // Flashed on the now-playing screen to confirm which control a button/gesture triggered.
-  FeedbackPlay,
-  FeedbackPause,
+  // Flashed on the now-playing screen to confirm which control a button triggered.
+  // Play and Pause are deliberately absent: the artwork's veil already answers that
+  // press across the whole screen, and a card repeating it just covered the answer.
   FeedbackNext,
   FeedbackPrev,
 } FeedbackIcon;
@@ -389,8 +427,9 @@ static AppScreen s_queue_return_screen = ScreenPlaying;
 // header band). When on, the whole app switches to the bespoke chromeless language -
 // white ground, dark-gray eyebrow, rounded accent selection, footer hint band - across
 // Home, Menu, Library, song lists, Search type, Settings, Advanced, About and Queue.
-// See screen_uses_native_menu() and the bespoke_* helpers.
-static bool s_bespoke_ui;
+// See screen_uses_native_menu() and the bespoke_* helpers. On by default: it is the
+// language the whole app is designed in now, and the stock look is the fallback.
+static bool s_bespoke_ui = true;
 // Home's own selection. Bespoke Home is a real menu (UP/DOWN move, SELECT opens)
 // rather than three fixed button shortcuts, and it must not disturb s_menu_selection.
 static int s_home_selection;
@@ -413,7 +452,9 @@ static char s_placeholder_title[TEXT_LENGTH];
 static char s_placeholder_message[TEXT_LENGTH];
 static char s_time_text[6];
 static bool s_ignore_menu_repeat;
-static bool s_keyboard_pt2;
+// Grid keyboard by default. Forced off below on any platform without a touchscreen,
+// where the grid has no way to be driven - see the PBL_PLATFORM_EMERY guard in init().
+static bool s_keyboard_pt2 = true;
 #ifdef PBL_PLATFORM_EMERY
 static bool s_touch_subscribed;
 static bool s_touch_active;
@@ -454,6 +495,7 @@ static void np_toggle_shuffle(void);
 static void np_toggle_output(void);
 static int settings_item_count(void);
 static int advanced_item_count(void);
+static int advanced_item_id(int row);
 static int library_item_count(void);
 static const char *library_items_title(void);
 static bool screen_uses_native_menu(AppScreen screen);
@@ -555,7 +597,12 @@ static void update_cover_art_brightness(void) {
 // Scales the cover into 'bounds' by writing straight to the 8-bit framebuffer (one byte
 // per pixel). This is far cheaper than a graphics_fill_rect per source pixel - at 144x144
 // that was ~20k calls per frame, slow enough to visibly repaint on every redraw.
-static void draw_cover_art_background(GContext *ctx, GRect bounds) {
+//
+// With crop set, the source is centre-cropped to the destination's aspect ratio first,
+// so the art fills the frame by trimming the longer axis instead of being squashed
+// into it. The Home card crops; the full-screen Now Playing background keeps the
+// stretch it has always had.
+static void draw_cover_art_ex(GContext *ctx, GRect bounds, bool crop) {
   if (!s_cover_art_background || !s_cover_art_ready || !s_cover_art_data) return;
   const int w = s_cover_art_w;
   const int h = s_cover_art_h;
@@ -564,11 +611,25 @@ static void draw_cover_art_background(GContext *ctx, GRect bounds) {
   const int bh = bounds.size.h;
   if (w <= 0 || h <= 0 || bw <= 0 || bh <= 0) return;
 
+  int sx0 = 0, sy0 = 0, sw = w, sh = h;
+  if (crop) {
+    if (w * bh > h * bw) {
+      // Source wider than the frame: trim the sides.
+      sw = h * bw / bh;
+      sx0 = (w - sw) / 2;
+    } else if (w * bh < h * bw) {
+      // Source taller than the frame: trim top and bottom.
+      sh = w * bh / bw;
+      sy0 = (h - sh) / 2;
+    }
+    if (sw <= 0 || sh <= 0) { sx0 = sy0 = 0; sw = w; sh = h; }
+  }
+
   // Precompute the source column for each destination column so the inner loop is a
   // plain lookup + byte write.
   int sx_map[200];
   int cols = bw > 200 ? 200 : bw;
-  for (int dx = 0; dx < cols; dx++) sx_map[dx] = dx * w / bw;
+  for (int dx = 0; dx < cols; dx++) sx_map[dx] = sx0 + dx * sw / bw;
 
   const uint8_t black = GColorBlack.argb;
   const uint8_t white = GColorWhite.argb;
@@ -579,7 +640,7 @@ static void draw_cover_art_background(GContext *ctx, GRect bounds) {
     int py = bounds.origin.y + dy;
     if (py < 0 || py >= 228) continue;
     GBitmapDataRowInfo row = gbitmap_get_data_row_info(fb, py);
-    int sy = dy * h / bh;
+    int sy = sy0 + dy * sh / bh;
     const uint8_t *src_row = s_cover_art_data + (s_cover_art_color ? sy * w : sy * bytes_per_row);
     for (int dx = 0; dx < cols; dx++) {
       int px = bounds.origin.x + dx;
@@ -595,6 +656,60 @@ static void draw_cover_art_background(GContext *ctx, GRect bounds) {
     }
   }
   graphics_release_frame_buffer(ctx, fb);
+}
+
+static void draw_cover_art_background(GContext *ctx, GRect bounds) {
+  draw_cover_art_ex(ctx, bounds, false);
+}
+
+// 50% black checkerboard over a rect: the veil that marks the artwork as paused on
+// Now Playing. Written straight into the framebuffer for the same reason
+// draw_cover_art_ex() is - it is a per-pixel pattern, and there is no alpha to blend
+// with. Cheap enough not to matter: it covers the artwork card only, and it never
+// runs during playback, which is the redraw that happens once a second.
+static void draw_dither_scrim(GContext *ctx, GRect r) {
+  const uint8_t black = GColorBlack.argb;
+  const int y_end = r.origin.y + r.size.h;
+  const int x_end = r.origin.x + r.size.w;
+  GBitmap *fb = graphics_capture_frame_buffer(ctx);
+  if (!fb) return;
+  for (int y = r.origin.y; y < y_end; y++) {
+    if (y < 0 || y >= 228) continue;
+    GBitmapDataRowInfo row = gbitmap_get_data_row_info(fb, y);
+    // Offsetting alternate rows by one is what makes it a checkerboard rather than
+    // vertical stripes, which at this pitch would moire against the artwork.
+    for (int x = r.origin.x + (y & 1); x < x_end; x += 2) {
+      if (x < row.min_x || x > row.max_x) continue;
+      row.data[x] = black;
+    }
+  }
+  graphics_release_frame_buffer(ctx, fb);
+}
+
+// Stands in for the cover while there isn't one, on both surfaces that show artwork.
+// A gray card rather than bare ground: leaving the space unpainted made a missing
+// cover read as a broken screen instead of a pending one. While a transfer is actually
+// running it also shows how far in it is, which is information neither screen was
+// carrying anywhere. 'corners' is what the caller wants rounded - all four on Now
+// Playing, where the artwork is a card in its own right; the top two on Home, where
+// the band below it closes off the bottom.
+static void draw_art_placeholder(GContext *ctx, GRect art, bool loading,
+                                 GCornerMask corners) {
+  graphics_context_set_fill_color(ctx, GColorDarkGray);
+  graphics_fill_rect(ctx, art, 6, corners);
+  const GPoint c = GPoint(art.origin.x + art.size.w / 2, art.origin.y + art.size.h / 2);
+  draw_note_icon(ctx, GPoint(c.x, c.y - (loading ? 12 : 0)), GColorLightGray);
+  if (!loading) return;
+  const int w = art.size.w - 80;
+  int filled = 0;
+  if (s_cover_art_expected_bytes > 0) {
+    filled = w * s_cover_art_received_bytes / s_cover_art_expected_bytes;
+    if (filled > w) filled = w;
+  }
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(c.x - w / 2, c.y + 20, w, 5), 2, GCornersAll);
+  graphics_context_set_fill_color(ctx, GColorLightGray);
+  graphics_fill_rect(ctx, GRect(c.x - w / 2, c.y + 20, filled, 5), 2, GCornersAll);
 }
 
 // Navigation history. Forward navigation pushes the screen being left (with the
@@ -728,12 +843,16 @@ static void shuffle_home_quote(void) {
   s_home_quote = next;
 }
 
-static ThemeColors colors(void) {
+// The stock UI's palette: a white ground with a colored accent, unchanged. The system
+// MenuLayer it hands its lists to paints its own white background, so this side cannot
+// move off white without stranding text on it.
+static ThemeColors classic_colors(void) {
   if (s_theme == ThemePurple) {
     return (ThemeColors) {
       .background = GColorWhite,
       .foreground = GColorBlack,
       .accent = GColorPurpureus,
+      .on_accent = GColorWhite,
       .secondary = GColorDarkGray,
       .surface = GColorLightGray,
       .action_bar_bg = GColorWhite,
@@ -747,6 +866,7 @@ static ThemeColors colors(void) {
       .background = GColorWhite,
       .foreground = GColorBlack,
       .accent = GColorSunsetOrange,
+      .on_accent = GColorBlack,
       .secondary = GColorDarkGray,
       .surface = GColorLightGray,
       .action_bar_bg = GColorWhite,
@@ -760,6 +880,7 @@ static ThemeColors colors(void) {
       .background = GColorWhite,
       .foreground = GColorBlack,
       .accent = GColorFashionMagenta,
+      .on_accent = GColorBlack,
       .secondary = GColorDarkGray,
       .surface = GColorLightGray,
       .action_bar_bg = GColorWhite,
@@ -776,6 +897,7 @@ static ThemeColors colors(void) {
       .background = GColorWhite,
       .foreground = GColorBlack,
       .accent = GColorBlack,
+      .on_accent = GColorWhite,
       .secondary = GColorDarkGray,
       .surface = GColorLightGray,
       .action_bar_bg = GColorBlack,
@@ -788,6 +910,7 @@ static ThemeColors colors(void) {
     .background = GColorWhite,
     .foreground = GColorBlack,
     .accent = GColorTiffanyBlue,
+    .on_accent = GColorBlack,
     .secondary = GColorDarkGray,
     .surface = GColorLightGray,
     .action_bar_bg = GColorWhite,
@@ -797,8 +920,154 @@ static ThemeColors colors(void) {
   };
 }
 
+// The bespoke UI's palette: a deep tone of the theme's own hue as the ground, bright
+// ink on top, and the theme's familiar accent for fills - the shape Arcade established,
+// applied to every theme.
+//
+// Contrast picked every value here. On the 64-color panel a mid-tone accent used as
+// *text* on white is under 3:1 (Tiffany Blue 2.9, Sunset Orange 3.2), which is what
+// made the old secondary text so hard to read. Inverting to a deep ground with white
+// ink puts every text pairing at 4.6:1 or better, and every accent fill stays visibly
+// lighter than the ground it sits on:
+//
+//   theme     ground     ink-on-ground   accent    on-accent    fill-vs-ground
+//   Default   #AA0055    white  7.4:1    #FF55FF   black 8.0      2.8:1
+//   Teal      #005555    white  8.7:1    #00AAAA   black 7.4      3.0:1
+//   Purple    #550055    white 13.9:1    #AA55AA   white 4.6      3.4:1
+//   Sunset    #AA0000    white  7.8:1    #FF5555   black 6.7      2.5:1
+//   Mono      black      white 21.0:1    white     black 21.0    21.0:1
+//   Arcade     #550055    cyan  11.5:1    #00FFFF   #550055 11.5   11.5:1
+//
+// `secondary` (dim text) and `surface` (scrollbar tracks, an unlit shuffle icon) are
+// light gray on every dark ground: clearly quieter than white ink but still 4.6:1,
+// where a dark gray would have vanished into the ground. Arcade is the exception - it
+// has no white to be quieter than, so it dims cyan to #00AAAA (5.1:1) instead.
+static ThemeColors bespoke_colors(void) {
+  if (s_theme == ThemePurple) {
+    return (ThemeColors) {
+      .background = GColorImperialPurple,
+      .foreground = GColorWhite,
+      .accent = GColorPurpureus,
+      .on_accent = GColorWhite,
+      .secondary = GColorLightGray,
+      .surface = GColorLightGray,
+      .action_bar_bg = GColorImperialPurple,
+      .action_bar_icon = GColorWhite,
+      .action_bar_press_bg = GColorPurpureus,
+      .action_bar_press_icon = GColorWhite,
+    };
+  }
+  if (s_theme == ThemeSunset) {
+    return (ThemeColors) {
+      .background = GColorDarkCandyAppleRed,
+      .foreground = GColorWhite,
+      .accent = GColorSunsetOrange,
+      .on_accent = GColorBlack,
+      .secondary = GColorLightGray,
+      .surface = GColorLightGray,
+      .action_bar_bg = GColorDarkCandyAppleRed,
+      .action_bar_icon = GColorWhite,
+      .action_bar_press_bg = GColorSunsetOrange,
+      .action_bar_press_icon = GColorBlack,
+    };
+  }
+  if (s_theme == ThemeDefault) {
+    // The accent steps up from Fashion Magenta to Shocking Pink: against the berry
+    // ground the darker pink was only 2.0:1, so a selected row barely read as selected.
+    return (ThemeColors) {
+      .background = GColorJazzberryJam,
+      .foreground = GColorWhite,
+      .accent = GColorShockingPink,
+      .on_accent = GColorBlack,
+      .secondary = GColorLightGray,
+      .surface = GColorLightGray,
+      .action_bar_bg = GColorJazzberryJam,
+      .action_bar_icon = GColorWhite,
+      .action_bar_press_bg = GColorShockingPink,
+      .action_bar_press_icon = GColorBlack,
+    };
+  }
+  if (s_theme == ThemeMono) {
+    // Mono's "color" is the absence of one: the stock look, inverted.
+    return (ThemeColors) {
+      .background = GColorBlack,
+      .foreground = GColorWhite,
+      .accent = GColorWhite,
+      .on_accent = GColorBlack,
+      .secondary = GColorLightGray,
+      .surface = GColorDarkGray,
+      .action_bar_bg = GColorBlack,
+      .action_bar_icon = GColorWhite,
+      .action_bar_press_bg = GColorWhite,
+      .action_bar_press_icon = GColorBlack,
+    };
+  }
+  if (s_theme == ThemeArcade) {
+    // Cyan on deep magenta. Both hues are the reference's; only the ground's lightness
+    // has moved, and it has moved twice. #FF00AA sat at 2.9:1, which no rearrangement
+    // of two colors fixes - contrast is symmetric, so lightness is the only lever that
+    // does not change the hue. #AA0055 brought that to 5.9:1, and #550055 brings it to
+    // 11.5:1, which is where the rest of the themes already were.
+    //
+    // Going darker also bought the theme a third color for the first time. It had none
+    // - dim text and unlit icons had to fall back to the foreground, so "quiet" and
+    // "loud" looked identical - and #00AAAA now clears 5:1 on this ground while
+    // reading as clearly dimmer than full cyan.
+    return (ThemeColors) {
+      .background = GColorImperialPurple,
+      .foreground = GColorCyan,
+      .accent = GColorCyan,
+      .on_accent = GColorImperialPurple,
+      .secondary = GColorTiffanyBlue,
+      .surface = GColorTiffanyBlue,
+      .action_bar_bg = GColorImperialPurple,
+      .action_bar_icon = GColorCyan,
+      .action_bar_press_bg = GColorCyan,
+      .action_bar_press_icon = GColorImperialPurple,
+    };
+  }
+  return (ThemeColors) {
+    .background = GColorMidnightGreen,
+    .foreground = GColorWhite,
+    .accent = GColorTiffanyBlue,
+    .on_accent = GColorBlack,
+    .secondary = GColorLightGray,
+    .surface = GColorLightGray,
+    .action_bar_bg = GColorMidnightGreen,
+    .action_bar_icon = GColorWhite,
+    .action_bar_press_bg = GColorTiffanyBlue,
+    .action_bar_press_icon = GColorBlack,
+  };
+}
+
+static ThemeColors colors(void) {
+  return s_bespoke_ui ? bespoke_colors() : classic_colors();
+}
+
 static GColor accent_color(void) {
   return colors().accent;
+}
+
+static GColor on_accent_color(void) {
+  return colors().on_accent;
+}
+
+// The bespoke UI's ground and ink. Every theme but Arcade is white-on-black, so these
+// read as GColorWhite/GColorBlack did before; Arcade is the reason they are lookups.
+static GColor ui_bg(void) {
+  return colors().background;
+}
+
+static GColor ui_fg(void) {
+  return colors().foreground;
+}
+
+// Ink one step down from ui_fg() - hints, subtitles, the value under a name. Gray for
+// the white-ground themes; a dimmed cyan for Arcade, which has no white to step down
+// from. It used to return the foreground unchanged there, so nothing on that theme
+// could look quieter than anything else.
+static GColor ui_dim(void) {
+  return colors().secondary;
 }
 
 static const char *theme_name(void) {
@@ -806,7 +1075,15 @@ static const char *theme_name(void) {
   if (s_theme == ThemeSunset) return "Sunset";
   if (s_theme == ThemeTeal) return "Dreamwave Teal";
   if (s_theme == ThemeMono) return "Mono";
+  if (s_theme == ThemeArcade) return "Arcade";
   return "Default";
+}
+
+// Arcade repaints the ground itself, which only the bespoke screens draw - the stock
+// UI hands its lists to a system MenuLayer that would keep its white background and
+// leave cyan text stranded on it. So the theme is offered to the bespoke UI only.
+static bool theme_is_available(AppTheme theme) {
+  return theme != ThemeArcade || s_bespoke_ui;
 }
 
 static void animation_callback(void *context) {
@@ -1076,6 +1353,51 @@ static const SearchResult *current_playing_result(void) {
   return &s_results[index];
 }
 
+// Frees the custom faces. Safe to call when they were never loaded.
+static void sophie_fonts_unload(void) {
+  for (int i = 0; i < SophieFontCount; i++) {
+    if (s_sophie_fonts[i]) {
+      fonts_unload_custom_font(s_sophie_fonts[i]);
+      s_sophie_fonts[i] = NULL;
+    }
+  }
+}
+
+static void sophie_fonts_load(void) {
+  static const uint32_t ids[SophieFontCount] = {
+    RESOURCE_ID_FONT_LYNO_14, RESOURCE_ID_FONT_LYNO_18,
+    RESOURCE_ID_FONT_LYNO_24, RESOURCE_ID_FONT_LYNO_28,
+  };
+  for (int i = 0; i < SophieFontCount; i++) {
+    if (!s_sophie_fonts[i]) s_sophie_fonts[i] = fonts_load_custom_font(resource_get_handle(ids[i]));
+  }
+}
+
+// Every piece of type in the app goes through here rather than calling
+// ui_font() directly, so Sophie mode is one lookup instead of an edit at
+// each of the ~90 draw sites. Off, it is exactly the call it replaced.
+//
+// The system keys are literals, so comparing pointers would work on this compiler and
+// break on the next one; the string compare costs nothing at the handful of draws per
+// frame this screen does. Any face that failed to load falls back to the system font
+// rather than drawing nothing.
+static GFont ui_font(const char *key) {
+  // Gated on the theme as well as the switch. The row that toggles this is only shown
+  // under Mono, so a Sophie mode that outlived a theme change would be a setting with
+  // no way left to turn it off. Keeping the preference but ignoring it elsewhere means
+  // going back to Mono restores it.
+  if (s_sophie_mode && s_theme == ThemeMono) {
+    SophieFontSize size;
+    if (strcmp(key, FONT_KEY_GOTHIC_28_BOLD) == 0) size = SophieFont28;
+    else if (strcmp(key, FONT_KEY_GOTHIC_24_BOLD) == 0) size = SophieFont24;
+    else if (strcmp(key, FONT_KEY_GOTHIC_18) == 0 ||
+             strcmp(key, FONT_KEY_GOTHIC_18_BOLD) == 0) size = SophieFont18;
+    else size = SophieFont14;
+    if (s_sophie_fonts[size]) return s_sophie_fonts[size];
+  }
+  return fonts_get_system_font(key);
+}
+
 static void draw_text(GContext *ctx, const char *text, GFont font, GColor color,
                       GRect rect, GTextAlignment alignment) {
   graphics_context_set_text_color(ctx, color);
@@ -1219,7 +1541,7 @@ static void draw_header(GContext *ctx, const char *label) {
   ThemeColors c = colors();
   graphics_context_set_fill_color(ctx, c.accent);
   graphics_fill_rect(ctx, GRect(0, 0, 200, MENU_HEADER_HEIGHT), 0, GCornerNone);
-  draw_text(ctx, label, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GColorWhite,
+  draw_text(ctx, label, ui_font(FONT_KEY_GOTHIC_18_BOLD), on_accent_color(),
             GRect(8, 4, 184, 24), GTextAlignmentLeft);
 }
 
@@ -1323,12 +1645,12 @@ static void ensure_home_background(void) {
 #define BESPOKE_ROW_H 39
 
 static void bespoke_eyebrow(GContext *ctx, const char *label) {
-  draw_text(ctx, label, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GColorBlack,
+  draw_text(ctx, label, ui_font(FONT_KEY_GOTHIC_14_BOLD), ui_fg(),
             GRect(18, 14, 164, 18), GTextAlignmentLeft);
 }
 
 static void bespoke_ground(GContext *ctx, const char *label) {
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   bespoke_eyebrow(ctx, label);
 }
@@ -1336,14 +1658,14 @@ static void bespoke_ground(GContext *ctx, const char *label) {
 // Re-stamps the top and bottom bands after the rows are drawn, so a row scrolled to
 // the edge of the viewport can never bleed into the eyebrow or the hint.
 static void bespoke_frame(GContext *ctx, const char *label, const char *hint) {
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, BESPOKE_LIST_TOP), 0, GCornerNone);
   bespoke_eyebrow(ctx, label);
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, BESPOKE_FOOTER_TOP, 200, 228 - BESPOKE_FOOTER_TOP),
                      0, GCornerNone);
   if (hint) {
-    draw_text(ctx, hint, fonts_get_system_font(FONT_KEY_GOTHIC_14), GColorBlack,
+    draw_text(ctx, hint, ui_font(FONT_KEY_GOTHIC_14), ui_fg(),
               GRect(8, 204, 184, 18), GTextAlignmentCenter);
   }
 }
@@ -1362,11 +1684,11 @@ static void bespoke_row2(GContext *ctx, int y, int h, const char *title, const c
     graphics_context_set_fill_color(ctx, accent_color());
     graphics_fill_rect(ctx, GRect(5, y, 190, h), 4, GCornersAll);
   }
-  draw_text(ctx, title, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-            selected ? GColorWhite : title_color,
+  draw_text(ctx, title, ui_font(FONT_KEY_GOTHIC_18_BOLD),
+            selected ? on_accent_color() : title_color,
             GRect(12, y + 1, 176, 22), GTextAlignmentLeft);
-  draw_text(ctx, sub, fonts_get_system_font(FONT_KEY_GOTHIC_14),
-            selected ? GColorWhite : GColorBlack,
+  draw_text(ctx, sub, ui_font(FONT_KEY_GOTHIC_14),
+            selected ? on_accent_color() : ui_fg(),
             GRect(12, y + 20, 176, 18), GTextAlignmentLeft);
 }
 
@@ -1380,14 +1702,38 @@ static void bespoke_row1(GContext *ctx, int y, int h, const char *label, const c
     graphics_fill_rect(ctx, GRect(5, y, 190, h), 4, GCornersAll);
   }
   int text_y = y + (h - 22) / 2;
-  draw_text(ctx, label, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-            selected ? GColorWhite : GColorBlack,
-            GRect(12, text_y, value ? 100 : 176, 22), GTextAlignmentLeft);
+  int label_w = 176;
   if (value) {
-    draw_text(ctx, value, fonts_get_system_font(FONT_KEY_GOTHIC_14),
-              selected ? GColorWhite : accent_color(),
-              GRect(112, text_y + 3, 76, 18), GTextAlignmentRight);
+    // The value used to be plain 14px in the accent, right-aligned in a fixed 76px
+    // box. That was the least legible thing in the app - accent-on-white is under 3:1
+    // for the teal and orange themes - and the box clipped anything as long as
+    // "Keyboard" or a theme name. It is now a filled pill sized to its own text, so
+    // it reads as the current choice rather than as faint decoration, and the label
+    // yields whatever width the value actually needs.
+    GFont value_font = ui_font(FONT_KEY_GOTHIC_14_BOLD);
+    GFont label_font = ui_font(FONT_KEY_GOTHIC_18_BOLD);
+    int value_w = graphics_text_layout_get_content_size(
+        value, value_font, GRect(0, 0, 160, 20),
+        GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft).w;
+    int label_text_w = graphics_text_layout_get_content_size(
+        label, label_font, GRect(0, 0, 176, 24),
+        GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft).w;
+    int pill_w = value_w + 14;
+    int room = 176 - label_text_w - 8;
+    if (pill_w > room) pill_w = room;
+    if (pill_w < 34) pill_w = 34;
+    int pill_x = 188 - pill_w;
+    // On an unselected row the pill carries the accent; on a selected row the row
+    // itself is the accent, so the pill inverts to keep the value off its own ground.
+    graphics_context_set_fill_color(ctx, selected ? ui_bg() : accent_color());
+    graphics_fill_rect(ctx, GRect(pill_x, text_y + 1, pill_w, 20), 8, GCornersAll);
+    draw_text(ctx, value, value_font, selected ? accent_color() : on_accent_color(),
+              GRect(pill_x, text_y + 3, pill_w, 18), GTextAlignmentCenter);
+    label_w = pill_x - 12 - 6;
   }
+  draw_text(ctx, label, ui_font(FONT_KEY_GOTHIC_18_BOLD),
+            selected ? on_accent_color() : ui_fg(),
+            GRect(12, text_y, label_w, 22), GTextAlignmentLeft);
 }
 
 // Variable-height sibling of scroll_list_layout(): the grouped Advanced list mixes
@@ -1417,14 +1763,14 @@ static int bespoke_scroll(int content_h, int sel_top, int sel_bottom) {
 static void bespoke_empty(GContext *ctx, const char *label, const char *message,
                           const char *detail, const char *hint) {
   bespoke_ground(ctx, label);
-  draw_text(ctx, message, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GColorBlack,
+  draw_text(ctx, message, ui_font(FONT_KEY_GOTHIC_18_BOLD), ui_fg(),
             GRect(18, 96, 164, 26), GTextAlignmentCenter);
   if (detail) {
-    draw_text(ctx, detail, fonts_get_system_font(FONT_KEY_GOTHIC_14), GColorBlack,
+    draw_text(ctx, detail, ui_font(FONT_KEY_GOTHIC_14), ui_fg(),
               GRect(18, 120, 164, 36), GTextAlignmentCenter);
   }
   if (hint) {
-    draw_text(ctx, hint, fonts_get_system_font(FONT_KEY_GOTHIC_14), GColorBlack,
+    draw_text(ctx, hint, ui_font(FONT_KEY_GOTHIC_14), ui_fg(),
               GRect(8, 204, 184, 18), GTextAlignmentCenter);
   }
 }
@@ -1438,14 +1784,14 @@ static void bespoke_song_list(GContext *ctx, const char *label, const char *hint
   const int row_h = BESPOKE_ROW_H;
   int offset = scroll_list_layout(row_pitch, s_result_count, s_selected_result,
                                   BESPOKE_LIST_TOP, BESPOKE_VIEWPORT_H, true);
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   for (int i = 0; i < s_result_count; i++) {
     int y = BESPOKE_LIST_TOP + i * row_pitch - offset;
     if (y + row_h < BESPOKE_LIST_TOP || y > BESPOKE_FOOTER_TOP) continue;
     bool is_current = current_id[0] && strcmp(s_results[i].video_id, current_id) == 0;
     bespoke_row2(ctx, y, row_h, s_results[i].title, s_results[i].artist,
-                 i == s_selected_result, is_current ? accent_color() : GColorBlack);
+                 i == s_selected_result, is_current ? accent_color() : ui_fg());
   }
   bespoke_frame(ctx, label, hint);
   bespoke_scrollbar(ctx, offset);
@@ -1485,7 +1831,7 @@ static void draw_home(GContext *ctx) {
   const char *quote = s_bridge_ready ? active_home_quotes()[quote_index] : "Finding phone...";
   // Longer quotes need a smaller font to avoid clipping inside the banner.
   const char *quote_font = strlen(quote) > 18 ? FONT_KEY_GOTHIC_14_BOLD : FONT_KEY_GOTHIC_18_BOLD;
-  GFont font = fonts_get_system_font(quote_font);
+  GFont font = ui_font(quote_font);
 
   const int box_x = 10;
   const int box_y = 14;   // Fixed top position.
@@ -1522,71 +1868,124 @@ static const int LIBRARY_TYPES[] = {
 };
 static const char *const MENU_ITEMS[] = {"Search", "Library", "Settings", "About"};
 
-// Bespoke Home: a now-playing hero over a four-icon dock. The hero carries the three
-// things worth saying the instant Home appears, in priority order: the bridge is down,
-// something is playing, or nothing is. The dock is the More popup's icon row promoted
-// to the top level - UP/DOWN walk it, SELECT opens, and the destinations reuse
-// MENU_ITEMS so SELECT runs the same actions ScreenMenu does.
+// Bespoke Home: a shared upper surface over an icon dock. The surface carries the
+// three things worth saying the instant Home appears, in priority order: the bridge
+// is down, something is playing, or a destination is highlighted. The dock is the
+// More popup's icon row promoted to the top level - UP/DOWN walk it, SELECT opens,
+// and the destinations reuse MENU_ITEMS so SELECT runs the same actions ScreenMenu
+// does.
 //
-// The hero joins the selection ring (at index 0) only when there is a track behind it
-// to open; not-connected and idle variants are display surfaces with nowhere to go,
-// so the dock keeps indices 0-3 then. Selecting the hero materializes it as an accent
-// card - the same "selection fills in the accent" idiom as every other screen.
-static bool home_hero_selectable(void) {
-  return s_has_now_playing;
+// The upper surface is never selectable. Selection lives only on the dock icons;
+// highlighting the Now Playing icon fills the surface with the now-playing card
+// (accent band - the same "selection fills in the accent" idiom as every other
+// screen), and the not-connected alert surface has nowhere to go at all.
+
+// draw_cover_art_background() writes straight into the framebuffer, so it has no way
+// to honor a rounded corner. Stamping the corner steps back in afterwards is cheaper
+// than any clipping scheme and indistinguishable from a real radius at this size.
+static void stamp_corner_caps(GContext *ctx, GRect r, GColor ground) {
+  static const uint8_t run[6] = {6, 4, 3, 2, 1, 1};
+  graphics_context_set_stroke_color(ctx, ground);
+  graphics_context_set_stroke_width(ctx, 1);
+  const int left = r.origin.x;
+  const int right = r.origin.x + r.size.w - 1;
+  for (int dy = 0; dy < 6; dy++) {
+    const int n = run[dy];
+    const int top = r.origin.y + dy;
+    const int bottom = r.origin.y + r.size.h - 1 - dy;
+    graphics_draw_line(ctx, GPoint(left, top), GPoint(left + n - 1, top));
+    graphics_draw_line(ctx, GPoint(right - n + 1, top), GPoint(right, top));
+    graphics_draw_line(ctx, GPoint(left, bottom), GPoint(left + n - 1, bottom));
+    graphics_draw_line(ctx, GPoint(right - n + 1, bottom), GPoint(right, bottom));
+  }
 }
 
+// "Art bleed": the cover art *is* the card, with a solid band across the bottom
+// carrying the track. The band follows the same rule every other bespoke surface does
+// - accent fill with on-accent ink when this is the selected ring entry, ground with
+// normal ink when it is not - so selection still reads the same way it does in a list,
+// without needing a highlight the artwork would fight.
+//
+// The progress strip sits above the band rather than inside it: on the art it stays
+// visible whichever way the artwork is lit, and when the band is accent-filled the
+// played portion runs into it so the two read as one shape.
 static void draw_home_hero(GContext *ctx, bool selected) {
-  const GColor text = selected ? GColorWhite : GColorBlack;
-  const GColor tag = selected ? GColorWhite : accent_color();
-  if (selected) {
-    graphics_context_set_fill_color(ctx, accent_color());
-    graphics_fill_rect(ctx, GRect(5, 32, 190, 122), 6, GCornersAll);
-  }
+  const GRect card = GRect(5, 6, 190, 150);
+  const int band_h = 42;
+  const int band_y = card.origin.y + card.size.h - band_h;   // 112
 
   if (!s_bridge_ready) {
-    draw_text(ctx, "NOT CONNECTED", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-              text, GRect(18, 40, 176, 16), GTextAlignmentLeft);
-    graphics_context_set_text_color(ctx, selected ? GColorWhite : GColorDarkGray);
+    // Nothing is playing and there is no art to bleed, so this state keeps the plain
+    // card it always had.
+    const GColor text = selected ? on_accent_color() : ui_fg();
+    if (selected) {
+      graphics_context_set_fill_color(ctx, accent_color());
+      graphics_fill_rect(ctx, card, 6, GCornersAll);
+    }
+    draw_text(ctx, "NOT CONNECTED", ui_font(FONT_KEY_GOTHIC_14_BOLD),
+              text, GRect(18, 22, 176, 16), GTextAlignmentLeft);
+    graphics_context_set_text_color(ctx, selected ? on_accent_color() : ui_dim());
     graphics_draw_text(ctx, "Open dreamwave on phone",
-                       fonts_get_system_font(FONT_KEY_GOTHIC_18),
-                       GRect(18, 60, 164, 48), GTextOverflowModeWordWrap,
+                       ui_font(FONT_KEY_GOTHIC_18),
+                       GRect(18, 44, 164, 48), GTextOverflowModeWordWrap,
                        GTextAlignmentLeft, NULL);
     return;
   }
 
-  draw_text(ctx, s_playback_active ? "NOW PLAYING" : "PAUSED",
-            fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), text,
-            GRect(18, 40, 116, 16), GTextAlignmentLeft);
-  draw_text(ctx, s_phone_audio ? "PHONE" : "WATCH",
-            fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), tag,
-            GRect(126, 40, 56, 16), GTextAlignmentRight);
-  draw_text(ctx, s_now_playing.title, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
-            text, GRect(18, 60, 164, 32), GTextAlignmentLeft);
-  draw_text(ctx, s_now_playing.artist, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-            text, GRect(18, 92, 164, 22), GTextAlignmentLeft);
-  // The companion's position events keep this bar fresh while Home is showing.
-  // Respects the battery-saver "Progress bar" toggle exactly as Now Playing does.
-  if (s_show_progress) {
-    int filled = 0;
-    if (s_duration_seconds > 0) {
-      uint32_t elapsed = s_elapsed_seconds > s_duration_seconds ? s_duration_seconds
-                                                                : s_elapsed_seconds;
-      filled = 164 * elapsed / s_duration_seconds;
-    }
-    graphics_context_set_fill_color(ctx, GColorLightGray);
-    graphics_fill_rect(ctx, GRect(18, 122, 164, 4), 2, GCornersAll);
-    graphics_context_set_fill_color(ctx, selected ? GColorWhite : accent_color());
-    graphics_fill_rect(ctx, GRect(18, 122, filled, 4), 2, GCornersAll);
-    char left[16];
-    char right[16];
-    format_time(s_elapsed_seconds, left, sizeof(left));
-    format_time(s_duration_seconds, right, sizeof(right));
-    draw_text(ctx, left, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), text,
-              GRect(18, 130, 82, 16), GTextAlignmentLeft);
-    draw_text(ctx, right, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), text,
-              GRect(100, 130, 82, 16), GTextAlignmentRight);
+  const GColor band_bg = selected ? accent_color() : ui_bg();
+  const GColor band_ink = selected ? on_accent_color() : ui_fg();
+
+  // Same condition draw_cover_art_background() gates itself on, so the fallback shows
+  // exactly when the art would not have drawn.
+  const GRect art = GRect(card.origin.x, card.origin.y,
+                          card.size.w, card.size.h - band_h);
+  if (s_cover_art_background && s_cover_art_ready) {
+    // The card frame is much wider than the square art, so it crops rather than
+    // squashes (the full-screen background keeps its stretch).
+    draw_cover_art_ex(ctx, art, true);
+  } else {
+    // The same placeholder Now Playing uses, so a cover still on its way in looks the
+    // same on both screens and the card keeps a face either way. It replaced a bare
+    // note glyph on the ground, which read as "nothing is playing" rather than
+    // "the artwork has not arrived".
+    draw_art_placeholder(ctx, art, s_cover_art_receiving, GCornersTop);
   }
+
+  graphics_context_set_fill_color(ctx, band_bg);
+  graphics_fill_rect(ctx, GRect(card.origin.x, band_y, card.size.w, band_h),
+                     6, GCornersBottom);
+  stamp_corner_caps(ctx, card, ui_bg());
+
+  // No progress rail here. Home's job is to say what is playing and let you get to it;
+  // the rail belongs to Now Playing, which is one press away and has the room to show
+  // it properly. Drawing it in both places also meant Home redrawing once a second to
+  // advance four pixels.
+
+  // Play state keeps a narrow column at the band's right end. It was the word "PAUSED"
+  // before; as a glyph it costs 22px instead of 70, which is what buys the title its
+  // full width. The route is not here - it is on Now Playing and in the More popup, and
+  // on Home it was one more thing competing with the artwork.
+  const GPoint state_at = GPoint(177, band_y + 21);
+  if (s_playback_active) {
+    graphics_context_set_fill_color(ctx, band_ink);
+    graphics_fill_rect(ctx, GRect(state_at.x - 5, state_at.y - 6, 3, 12), 0, GCornerNone);
+    graphics_fill_rect(ctx, GRect(state_at.x + 2, state_at.y - 6, 3, 12), 0, GCornerNone);
+  } else {
+    graphics_context_set_fill_color(ctx, band_ink);
+    GPoint tri[] = {
+      GPoint(state_at.x - 4, state_at.y - 6),
+      GPoint(state_at.x + 6, state_at.y),
+      GPoint(state_at.x - 4, state_at.y + 6),
+    };
+    GPathInfo pi = { .num_points = 3, .points = tri };
+    GPath *p = gpath_create(&pi);
+    gpath_draw_filled(ctx, p);
+    gpath_destroy(p);
+  }
+  draw_text(ctx, s_now_playing.title, ui_font(FONT_KEY_GOTHIC_18_BOLD),
+            band_ink, GRect(14, band_y + 2, 148, 22), GTextAlignmentLeft);
+  draw_text(ctx, s_now_playing.artist, ui_font(FONT_KEY_GOTHIC_14),
+            band_ink, GRect(14, band_y + 22, 148, 18), GTextAlignmentLeft);
 }
 
 // Parallel to MENU_ITEMS: what each destination holds. Shown under the destination's
@@ -1595,42 +1994,93 @@ static const char *const MENU_HINTS[] = {
   "Songs, artists, radio", "Recent, cached, saved", "Output, volume, more", "Version and credits",
 };
 
-static void draw_home_list(GContext *ctx) {
-  const int hero_rows = home_hero_selectable() ? 1 : 0;
-  const bool hero_selected = hero_rows && s_home_selection == 0;
-  int row = s_home_selection - hero_rows;
-  if (row < 0 || row >= (int) ARRAY_LENGTH(MENU_ITEMS)) row = 0;
-  bespoke_ground(ctx, "DREAMWAVE");
+// Home's dock leads with a Now Playing entry that exists only while something is
+// playing - the one destination on the dock that is not always reachable - followed
+// by MENU_ITEMS. Its icon is a fixed play glyph; the live transport state stays on
+// the card and the Now Playing screen.
+#define HOME_DOCK_NOW_PLAYING 0
 
-  // The upper surface always describes the highlighted ring entry, More-popup style:
-  // the now-playing card when the hero is selected, otherwise the destination's name
-  // over what it holds. A down bridge overrides both - that alert matters more than
-  // menu context.
+static bool home_dock_is_now_playing(int i) {
+  return s_has_now_playing && i == HOME_DOCK_NOW_PLAYING;
+}
+
+// MENU_ITEMS index for a dock entry; only meaningful when it is not Now Playing.
+static int home_dock_menu_index(int i) {
+  return s_has_now_playing ? i - 1 : i;
+}
+
+static int home_dock_count(void) {
+  return (int) ARRAY_LENGTH(MENU_ITEMS) + (s_has_now_playing ? 1 : 0);
+}
+
+static const char *home_dock_name(int i) {
+  return home_dock_is_now_playing(i) ? "Now Playing" : MENU_ITEMS[home_dock_menu_index(i)];
+}
+
+static const char *home_dock_hint(int i) {
+  return home_dock_is_now_playing(i) ? (s_playback_active ? "Playing now" : "Paused")
+                                     : MENU_HINTS[home_dock_menu_index(i)];
+}
+
+// The dock's Now Playing entry is a fixed play glyph - the card it selects into
+// already carries the transport state, so the icon just says what the entry opens.
+static void draw_play_glyph(GContext *ctx, GPoint c, GColor color) {
+  graphics_context_set_fill_color(ctx, color);
+  GPoint tri[] = {
+    GPoint(c.x - 5, c.y - 7),
+    GPoint(c.x + 7, c.y),
+    GPoint(c.x - 5, c.y + 7),
+  };
+  GPathInfo pi = { .num_points = 3, .points = tri };
+  GPath *path = gpath_create(&pi);
+  gpath_draw_filled(ctx, path);
+  gpath_destroy(path);
+}
+
+static void draw_home_list(GContext *ctx) {
+  // A stale selection can outlive the track that added a fifth dock entry.
+  int sel = s_home_selection;
+  if (sel < 0 || sel >= home_dock_count()) sel = 0;
+  graphics_context_set_fill_color(ctx, ui_bg());
+  graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
+
+  // The upper surface belongs to the highlighted dock entry: the now-playing card
+  // for the Now Playing entry, otherwise the destination's name over what it holds.
+  // A down bridge overrides both - that alert matters more than menu context.
   if (!s_bridge_ready) {
     draw_home_hero(ctx, false);
-  } else if (hero_selected) {
+  } else if (home_dock_is_now_playing(sel)) {
     draw_home_hero(ctx, true);
   } else {
-    draw_text(ctx, MENU_ITEMS[row], fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD),
-              GColorBlack, GRect(18, 54, 164, 40), GTextAlignmentLeft);
-    draw_text(ctx, MENU_HINTS[row], fonts_get_system_font(FONT_KEY_GOTHIC_18),
-              GColorDarkGray, GRect(18, 96, 164, 24), GTextAlignmentLeft);
+    // The card surfaces (now playing, not connected) own the top of the screen, but
+    // every menu destination gets the app title back above its name.
+    bespoke_eyebrow(ctx, "DREAMWAVE");
+    draw_text(ctx, home_dock_name(sel), ui_font(FONT_KEY_GOTHIC_28_BOLD),
+              ui_fg(), GRect(18, 54, 164, 40), GTextAlignmentLeft);
+    draw_text(ctx, home_dock_hint(sel), ui_font(FONT_KEY_GOTHIC_18),
+              ui_dim(), GRect(18, 96, 164, 24), GTextAlignmentLeft);
   }
 
   // Nothing here scrolls, so no bespoke_frame stamping - just the dock and the hint.
   const int dock_y = 178;
-  const int dock_pitch = 40;
-  const int count = (int) ARRAY_LENGTH(MENU_ITEMS);
+  const int count = home_dock_count();
+  // A fifth icon at the four-icon pitch would push the outer two within 3px of the
+  // bezel, so the row tightens instead of overflowing.
+  const int dock_pitch = count > 4 ? 38 : 40;
   for (int i = 0; i < count; i++) {
     const int cx = 100 + (2 * i - (count - 1)) * dock_pitch / 2;
-    GColor glyph = GColorBlack;
-    if (s_home_selection == i + hero_rows) {
+    GColor glyph = ui_fg();
+    if (sel == i) {
       graphics_context_set_fill_color(ctx, accent_color());
       graphics_fill_circle(ctx, GPoint(cx, dock_y), 17);
-      glyph = GColorWhite;
+      glyph = on_accent_color();
     }
     const GPoint gc = GPoint(cx, dock_y);
-    switch (i) {
+    if (home_dock_is_now_playing(i)) {
+      draw_play_glyph(ctx, gc, glyph);
+      continue;
+    }
+    switch (home_dock_menu_index(i)) {
       case 0: draw_search_icon(ctx, gc, glyph); break;
       case 1: draw_vinyl_icon(ctx, gc, glyph); break;
       case 2: draw_sliders_icon(ctx, gc, glyph); break;
@@ -1638,7 +2088,7 @@ static void draw_home_list(GContext *ctx) {
     }
   }
   draw_text(ctx, "UP/DOWN choose    SELECT open",
-            fonts_get_system_font(FONT_KEY_GOTHIC_14), GColorBlack,
+            ui_font(FONT_KEY_GOTHIC_14), ui_fg(),
             GRect(8, 204, 184, 18), GTextAlignmentCenter);
 }
 
@@ -1648,13 +2098,16 @@ static const char *const SEARCH_TYPE_ITEMS[] = {"Song Search", "Artist Radio", "
 
 // Keyboard is the only row shown until unlocked from About (7x SELECT on VERSION) -
 // see advanced_item_count()/s_advanced_unlocked - so it must stay index 0.
+// "Cover art bg" used to sit between Home quotes and History. The artwork is now the
+// Now Playing screen's whole upper half and Home's card face, so turning it off left
+// two screens built around a hole; it is always on and the row is gone.
 static const char *const ADVANCED_ITEMS[] = {
   "Keyboard",        // 0  \_ Interface
   "Bespoke UI",      // 1  |
   "Theme",           // 2  |
-  "Home style",      // 3  |
-  "Home quotes",     // 4  |
-  "Cover art bg",    // 5  /
+  "Sophie mode",     // 3  |  (Mono only - sits directly under Theme)
+  "Home style",      // 4  |
+  "Home quotes",     // 5  /
   "History",         // 6  \_ Library
   "Results",         // 7  |
   "Library extras",  // 8  /
@@ -1671,9 +2124,9 @@ static const char *advanced_value(int index) {
     case 0: return s_keyboard_pt2 ? "Grid" : "Classic";
     case 1: return s_bespoke_ui ? "On" : "Off";
     case 2: return theme_name();
-    case 3: return s_alt_home ? "Kiwi" : "Unicorn";
-    case 4: return s_show_home_quotes ? "Show" : "Hide";
-    case 5: return s_cover_art_background ? "On" : "Off";
+    case 3: return s_sophie_mode ? "On" : "Off";
+    case 4: return s_alt_home ? "Kiwi" : "Unicorn";
+    case 5: return s_show_home_quotes ? "Show" : "Hide";
     case 6: snprintf(buf, sizeof(buf), "%d songs", s_history_limit); return buf;
     case 7: snprintf(buf, sizeof(buf), "%d", s_search_limit); return buf;
     case 8: return s_extra_library ? "On" : "Off";
@@ -1750,6 +2203,7 @@ static const char *native_menu_item_title(int index) {
     static char phone_volume[32];
     static char input_mode[32];
     static char progress_bar[32];
+    static char back_stops[32];
     static char advanced[24];
     snprintf(route, sizeof(route), "Output: %s", s_phone_audio ? "Phone" : "Watch");
     snprintf(watch_volume, sizeof(watch_volume), "Watch volume: %d%%", s_watch_volume);
@@ -1759,8 +2213,10 @@ static const char *native_menu_item_title(int index) {
              s_input_mode == InputKeyboard ? "Keyboard" : "Ask");
     snprintf(progress_bar, sizeof(progress_bar), "Progress bar: %s",
              s_show_progress ? "Show" : "Hide");
+    snprintf(back_stops, sizeof(back_stops), "Back stops: %s", s_back_stops ? "On" : "Off");
     snprintf(advanced, sizeof(advanced), "Advanced");
-    const char *items[] = {input_mode, route, watch_volume, phone_volume, progress_bar, advanced};
+    const char *items[] = {input_mode, route, watch_volume, phone_volume, progress_bar,
+                           back_stops, advanced};
     int count = settings_item_count();
     if (index < 0 || index >= count) return "";
     return items[index];
@@ -1768,7 +2224,8 @@ static const char *native_menu_item_title(int index) {
   if (s_screen == ScreenAdvanced) {
     static char row[40];
     if (index < 0 || index >= advanced_item_count()) return "";
-    snprintf(row, sizeof(row), "%s: %s", ADVANCED_ITEMS[index], advanced_value(index));
+    int id = advanced_item_id(index);
+    snprintf(row, sizeof(row), "%s: %s", ADVANCED_ITEMS[id], advanced_value(id));
     return row;
   }
   return "";
@@ -1818,7 +2275,7 @@ static void native_menu_draw_header_callback(GContext *ctx, const Layer *cell_la
   graphics_fill_rect(ctx, layer_get_bounds(cell_layer), 0, GCornerNone);
   graphics_context_set_text_color(ctx, GColorWhite);
   graphics_draw_text(ctx, native_menu_title(),
-                     fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+                     ui_font(FONT_KEY_GOTHIC_18_BOLD),
                      GRect(8, 4, layer_get_bounds(cell_layer).size.w - 16, 24),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 }
@@ -1850,7 +2307,7 @@ static void native_menu_draw_row_callback(GContext *ctx, const Layer *cell_layer
     graphics_context_set_text_color(ctx, menu_cell_layer_is_highlighted(cell_layer)
                                              ? GColorWhite
                                              : GColorDarkGray);
-    graphics_draw_text(ctx, ">", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+    graphics_draw_text(ctx, ">", ui_font(FONT_KEY_GOTHIC_18_BOLD),
                        GRect(bounds.size.w - 18, 11, 12, 24),
                        GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
   }
@@ -2053,17 +2510,17 @@ static void draw_native_menu(GContext *ctx, const char *title, const char *const
       graphics_context_set_fill_color(ctx, accent_color());
       graphics_fill_rect(ctx, GRect(5, y, 190, 40), 3, GCornersAll);
     }
-    draw_text(ctx, items[i], fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+    draw_text(ctx, items[i], ui_font(FONT_KEY_GOTHIC_24_BOLD),
               selected ? GColorWhite : GColorBlack, GRect(14, y + 7, 168, 24),
               GTextAlignmentLeft);
-    draw_text(ctx, ">", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+    draw_text(ctx, ">", ui_font(FONT_KEY_GOTHIC_18_BOLD),
               selected ? GColorWhite : GColorDarkGray, GRect(176, y + 7, 14, 24),
               GTextAlignmentRight);
   }
   // Header drawn last so rows scrolled above it are covered.
   graphics_context_set_fill_color(ctx, accent_color());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 31), 0, GCornerNone);
-  draw_text(ctx, title, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GColorWhite,
+  draw_text(ctx, title, ui_font(FONT_KEY_GOTHIC_18_BOLD), GColorWhite,
             GRect(9, 4, 182, 24), GTextAlignmentLeft);
   draw_scrollbar(ctx, GRect(195, 35, 3, 189), offset, viewport_h,
                  viewport_h + s_scroll_max, GColorLightGray, accent_color());
@@ -2111,13 +2568,13 @@ static void draw_library_bespoke(GContext *ctx) {
   int count = library_item_count();
   int offset = scroll_list_layout(row_pitch, count, s_menu_selection,
                                   BESPOKE_LIST_TOP, BESPOKE_VIEWPORT_H, true);
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   for (int i = 0; i < count; i++) {
     int y = BESPOKE_LIST_TOP + i * row_pitch - offset;
     if (y + row_h < BESPOKE_LIST_TOP || y > BESPOKE_FOOTER_TOP) continue;
     bespoke_row2(ctx, y, row_h, LIBRARY_ITEMS[i], LIBRARY_HINTS[i],
-                 i == s_menu_selection, GColorBlack);
+                 i == s_menu_selection, ui_fg());
   }
   bespoke_frame(ctx, "LIBRARY", "SELECT open");
   bespoke_scrollbar(ctx, offset);
@@ -2148,11 +2605,11 @@ static void draw_library_items(GContext *ctx) {
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   graphics_context_set_fill_color(ctx, accent_color());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 31), 0, GCornerNone);
-  draw_text(ctx, library_items_title(), fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+  draw_text(ctx, library_items_title(), ui_font(FONT_KEY_GOTHIC_18_BOLD),
             GColorWhite, GRect(8, 4, 184, 24), GTextAlignmentLeft);
   if (s_library_loading) {
     draw_status_mascot(ctx, GPoint(76, 66));
-    draw_text(ctx, "Loading...", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+    draw_text(ctx, "Loading...", ui_font(FONT_KEY_GOTHIC_18_BOLD),
               GColorBlack, GRect(10, 125, 180, 26), GTextAlignmentCenter);
     return;
   }
@@ -2160,7 +2617,7 @@ static void draw_library_items(GContext *ctx) {
   // hands every populated library list to the MenuLayer, so there is no row-drawing
   // path here to keep.
   draw_status_mascot(ctx, GPoint(76, 58));
-  draw_text(ctx, library_items_empty(), fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+  draw_text(ctx, library_items_empty(), ui_font(FONT_KEY_GOTHIC_18_BOLD),
             GColorBlack, GRect(10, 116, 180, 28), GTextAlignmentCenter);
 }
 
@@ -2179,27 +2636,61 @@ static void draw_queue(GContext *ctx) {
   // same as Cached Music; this only handles the loading/empty states then.
   if (screen_uses_native_menu(ScreenQueue)) return;
   if (s_queue_loading || s_result_count == 0) {
-    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_context_set_fill_color(ctx, ui_bg());
     graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
     bespoke_eyebrow(ctx, "QUEUE");
     draw_status_mascot(ctx, GPoint(76, s_queue_loading ? 76 : 68));
     draw_text(ctx, s_queue_loading ? "Loading..." : "Nothing queued",
-              fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GColorBlack,
+              ui_font(FONT_KEY_GOTHIC_18_BOLD), ui_fg(),
               GRect(10, s_queue_loading ? 135 : 126, 180, 28), GTextAlignmentCenter);
     return;
   }
   bespoke_song_list(ctx, "QUEUE", "SELECT jump    BACK close", bespoke_now_playing_id());
 }
 
+// Must track SETTINGS_ITEMS, which is declared below this point:
+// Input, Output, Watch volume, Phone volume, Progress bar, Back stops, Advanced.
 static int settings_item_count(void) {
-  return 6;
+  return 7;
 }
 
+// Whether an Advanced row is on screen at all. Two filters stack:
+//
+//  - Only Keyboard (index 0) is strictly needed day-to-day; everything else stays
+//    hidden until unlocked from About (7x SELECT on VERSION) - see
+//    s_advanced_unlocked/s_about_select_count.
+//  - Home style and Home quotes dress the *stock* Home only: the bespoke Home draws
+//    neither the full-screen background art nor the quote banner, so under the
+//    bespoke UI they were two rows that changed nothing you could see.
+//
+// Everything else - keyboard style, theme, cover art, the Library and Audio groups -
+// is shared by both UIs and stays put.
+static bool advanced_item_shown(int id) {
+  if (!s_advanced_unlocked) return id == 0;
+  // Sophie mode rides with Mono and is offered nowhere else, so it appears directly
+  // under Theme only once Theme is set to it.
+  if (id == 3) return s_theme == ThemeMono;
+  if (id == 4 || id == 5) return !s_bespoke_ui;
+  return true;
+}
+
+// Rows currently on screen. Callers index rows, not ADVANCED_ITEMS - advanced_item_id()
+// converts, so the gaps live in one place.
 static int advanced_item_count(void) {
-  // Only Keyboard (index 0) is strictly needed day-to-day; everything else stays
-  // hidden until unlocked from About (7x SELECT on VERSION) - see
-  // s_advanced_unlocked/s_about_select_count.
-  return s_advanced_unlocked ? (int) ARRAY_LENGTH(ADVANCED_ITEMS) : 1;
+  int n = 0;
+  for (int id = 0; id < (int) ARRAY_LENGTH(ADVANCED_ITEMS); id++) {
+    if (advanced_item_shown(id)) n++;
+  }
+  return n;
+}
+
+// Visible row -> ADVANCED_ITEMS index, for the label, the value and the SELECT handler.
+static int advanced_item_id(int row) {
+  for (int id = 0; id < (int) ARRAY_LENGTH(ADVANCED_ITEMS); id++) {
+    if (!advanced_item_shown(id)) continue;
+    if (row-- == 0) return id;
+  }
+  return 0;
 }
 
 // Library shows Recently Played + Cached Music + Favorites + Playlists by default;
@@ -2222,7 +2713,8 @@ static int current_menu_item_count(void) {
 // Parallel to the Settings row order used by native_menu_item_title() and the SELECT
 // handler: Input, Output, Watch volume, Phone volume, Progress bar, Advanced.
 static const char *const SETTINGS_ITEMS[] = {
-  "Input", "Output", "Watch volume", "Phone volume", "Progress bar", "Advanced",
+  "Input", "Output", "Watch volume", "Phone volume", "Progress bar", "Back stops",
+  "Advanced",
 };
 
 static const char *settings_value(int index) {
@@ -2234,6 +2726,7 @@ static const char *settings_value(int index) {
     case 2: snprintf(buf, sizeof(buf), "%d%%", s_watch_volume); return buf;
     case 3: snprintf(buf, sizeof(buf), "%d%%", s_phone_volume); return buf;
     case 4: return s_show_progress ? "Show" : "Hide";
+    case 5: return s_back_stops ? "On" : "Off";
     default: return NULL;   // Advanced is a link onward, not a value.
   }
 }
@@ -2244,7 +2737,7 @@ static void draw_settings_bespoke(GContext *ctx) {
   int count = settings_item_count();
   int offset = scroll_list_layout(row_pitch, count, s_menu_selection,
                                   BESPOKE_LIST_TOP, BESPOKE_VIEWPORT_H, true);
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   for (int i = 0; i < count; i++) {
     int y = BESPOKE_LIST_TOP + i * row_pitch - offset;
@@ -2262,38 +2755,53 @@ static void draw_advanced_bespoke(GContext *ctx) {
   const int header_h = 24;
   const int row_pitch = BESPOKE_ROW_PITCH;
   const int row_h = BESPOKE_ROW_H;
-  int count = advanced_item_count();
+  // Groups are spans of ADVANCED_ITEMS, but the rows inside one can be filtered out
+  // (see advanced_item_shown), so both passes walk item ids while counting visible
+  // rows separately - that row counter is what s_menu_selection indexes. A group whose
+  // rows are all hidden drops its header with them.
   int content_h = 0, sel_top = 0, sel_bottom = row_pitch;
+  int row = 0;
   for (unsigned g = 0; g < ARRAY_LENGTH(ADVANCED_GROUPS); g++) {
     const AdvancedGroup *grp = &ADVANCED_GROUPS[g];
-    if (grp->first >= count) break;
-    content_h += header_h;
-    for (int i = grp->first; i < grp->first + grp->count && i < count; i++) {
-      if (i == s_menu_selection) {
+    bool header_drawn = false;
+    for (int id = grp->first; id < grp->first + grp->count; id++) {
+      if (!advanced_item_shown(id)) continue;
+      if (!header_drawn) {
+        content_h += header_h;
+        header_drawn = true;
+      }
+      if (row == s_menu_selection) {
         sel_top = content_h;
         sel_bottom = content_h + row_pitch;
       }
       content_h += row_pitch;
+      row++;
     }
   }
   int offset = bespoke_scroll(content_h, sel_top, sel_bottom);
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   int y = BESPOKE_LIST_TOP - offset;
+  row = 0;
   for (unsigned g = 0; g < ARRAY_LENGTH(ADVANCED_GROUPS); g++) {
     const AdvancedGroup *grp = &ADVANCED_GROUPS[g];
-    if (grp->first >= count) break;
-    if (y + header_h > BESPOKE_LIST_TOP && y < BESPOKE_FOOTER_TOP) {
-      draw_text(ctx, grp->label, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-                GColorDarkGray, GRect(18, y + 2, 164, 16), GTextAlignmentLeft);
-    }
-    y += header_h;
-    for (int i = grp->first; i < grp->first + grp->count && i < count; i++) {
+    bool header_drawn = false;
+    for (int id = grp->first; id < grp->first + grp->count; id++) {
+      if (!advanced_item_shown(id)) continue;
+      if (!header_drawn) {
+        if (y + header_h > BESPOKE_LIST_TOP && y < BESPOKE_FOOTER_TOP) {
+          draw_text(ctx, grp->label, ui_font(FONT_KEY_GOTHIC_14_BOLD),
+                    ui_dim(), GRect(18, y + 2, 164, 16), GTextAlignmentLeft);
+        }
+        y += header_h;
+        header_drawn = true;
+      }
       if (y + row_h > BESPOKE_LIST_TOP && y < BESPOKE_FOOTER_TOP) {
-        bespoke_row1(ctx, y, row_h, ADVANCED_ITEMS[i], advanced_value(i),
-                     i == s_menu_selection);
+        bespoke_row1(ctx, y, row_h, ADVANCED_ITEMS[id], advanced_value(id),
+                     row == s_menu_selection);
       }
       y += row_pitch;
+      row++;
     }
   }
   bespoke_frame(ctx, "ADVANCED", "SELECT change");
@@ -2310,6 +2818,7 @@ static void draw_settings(GContext *ctx) {
   char phone_volume[32];
   char input_mode[32];
   char progress_bar[32];
+  char back_stops[32];
   char advanced[24];
   snprintf(route, sizeof(route), "Output: %s", s_phone_audio ? "Phone" : "Watch");
   snprintf(watch_volume, sizeof(watch_volume), "Watch volume: %d%%", s_watch_volume);
@@ -2319,8 +2828,10 @@ static void draw_settings(GContext *ctx) {
            s_input_mode == InputKeyboard ? "Keyboard" : "Ask");
   snprintf(progress_bar, sizeof(progress_bar), "Progress bar: %s",
            s_show_progress ? "Show" : "Hide");
+  snprintf(back_stops, sizeof(back_stops), "Back stops: %s", s_back_stops ? "On" : "Off");
   snprintf(advanced, sizeof(advanced), "Advanced");
-  const char *items[] = {input_mode, route, watch_volume, phone_volume, progress_bar, advanced};
+  const char *items[] = {input_mode, route, watch_volume, phone_volume, progress_bar,
+                         back_stops, advanced};
   draw_native_menu(ctx, "SETTINGS", items, settings_item_count());
 }
 
@@ -2333,7 +2844,8 @@ static void draw_advanced(GContext *ctx) {
   const char *items[ARRAY_LENGTH(ADVANCED_ITEMS)];
   int count = advanced_item_count();
   for (int i = 0; i < count; i++) {
-    snprintf(rows[i], sizeof(rows[i]), "%s: %s", ADVANCED_ITEMS[i], advanced_value(i));
+    int id = advanced_item_id(i);
+    snprintf(rows[i], sizeof(rows[i]), "%s: %s", ADVANCED_ITEMS[id], advanced_value(id));
     items[i] = rows[i];
   }
   draw_native_menu(ctx, "ADVANCED", items, count);
@@ -2375,28 +2887,28 @@ static void draw_search_type(GContext *ctx) {
     if (sel < 0) sel = 0;
     if (sel >= count) sel = count - 1;
 
-    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_context_set_fill_color(ctx, ui_bg());
     graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
-    draw_text(ctx, "SEARCH", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GColorBlack,
+    draw_text(ctx, "SEARCH", ui_font(FONT_KEY_GOTHIC_14_BOLD), ui_fg(),
               GRect(18, 18, 164, 18), GTextAlignmentLeft);
-    draw_text(ctx, SEARCH_TYPE_ITEMS[sel], fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD),
-              GColorBlack, GRect(18, 54, 164, 40), GTextAlignmentLeft);
+    draw_text(ctx, SEARCH_TYPE_ITEMS[sel], ui_font(FONT_KEY_GOTHIC_28_BOLD),
+              ui_fg(), GRect(18, 54, 164, 40), GTextAlignmentLeft);
     // 18px descriptive text keeps the gray (like the More popup's state value) so the
     // big name stays on top of the hierarchy; only 14px text goes full black.
-    graphics_context_set_text_color(ctx, GColorDarkGray);
+    graphics_context_set_text_color(ctx, ui_dim());
     graphics_draw_text(ctx, SEARCH_TYPE_HINTS[sel],
-                       fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                       ui_font(FONT_KEY_GOTHIC_18),
                        GRect(18, 96, 164, 48), GTextOverflowModeWordWrap,
                        GTextAlignmentLeft, NULL);
     const int cy = 158;
     const int icon_pitch = 30;
     for (int i = 0; i < count; i++) {
       const int cx = 100 + (2 * i - (count - 1)) * icon_pitch / 2;
-      GColor glyph = GColorBlack;
+      GColor glyph = ui_fg();
       if (i == sel) {
         graphics_context_set_fill_color(ctx, accent_color());
         graphics_fill_circle(ctx, GPoint(cx, cy), 17);
-        glyph = GColorWhite;
+        glyph = on_accent_color();
       }
       const GPoint gc = GPoint(cx, cy);
       switch (i) {
@@ -2405,8 +2917,8 @@ static void draw_search_type(GContext *ctx) {
         default: draw_broadcast_icon(ctx, gc, glyph); break;
       }
     }
-    draw_text(ctx, "SELECT choose    BACK close", fonts_get_system_font(FONT_KEY_GOTHIC_14),
-              GColorBlack, GRect(8, 202, 184, 18), GTextAlignmentCenter);
+    draw_text(ctx, "SELECT choose    BACK close", ui_font(FONT_KEY_GOTHIC_14),
+              ui_fg(), GRect(8, 202, 184, 18), GTextAlignmentCenter);
     return;
   }
   draw_native_menu(ctx, "SEARCH", SEARCH_TYPE_ITEMS, ARRAY_LENGTH(SEARCH_TYPE_ITEMS));
@@ -2429,22 +2941,22 @@ static const char *const ACK_DESC[] = {
 // Spec rows over the acknowledgements. The credits are licence attribution, so they
 // stay in full and this screen keeps scrolling even though the rows above it do not.
 static void draw_about_bespoke(GContext *ctx) {
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   int y = BESPOKE_LIST_TOP - s_scroll;
-  bespoke_row1(ctx, y, BESPOKE_ROW_H, "Version", "0.2.0", false);
+  bespoke_row1(ctx, y, BESPOKE_ROW_H, "Version", APP_VERSION, false);
   y += BESPOKE_ROW_PITCH;
   bespoke_row1(ctx, y, BESPOKE_ROW_H, "Watch", "Emery", false);
   y += BESPOKE_ROW_PITCH;
   bespoke_row1(ctx, y, BESPOKE_ROW_H, "Bridge", s_bridge_ready ? "Ready" : "Offline", false);
   y += BESPOKE_ROW_PITCH + 8;
-  draw_text(ctx, "ACKNOWLEDGEMENTS", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+  draw_text(ctx, "ACKNOWLEDGEMENTS", ui_font(FONT_KEY_GOTHIC_14_BOLD),
             GColorDarkGray, GRect(18, y, 164, 16), GTextAlignmentLeft);
   y += 22;
   for (unsigned i = 0; i < ARRAY_LENGTH(ACK_NAMES); i++) {
-    draw_text(ctx, ACK_NAMES[i], fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GColorBlack,
+    draw_text(ctx, ACK_NAMES[i], ui_font(FONT_KEY_GOTHIC_14_BOLD), ui_fg(),
               GRect(18, y, 164, 18), GTextAlignmentLeft);
-    draw_text(ctx, ACK_DESC[i], fonts_get_system_font(FONT_KEY_GOTHIC_14), GColorBlack,
+    draw_text(ctx, ACK_DESC[i], ui_font(FONT_KEY_GOTHIC_14), ui_fg(),
               GRect(18, y + 15, 164, 18), GTextAlignmentLeft);
     y += 37;
   }
@@ -2470,22 +2982,22 @@ static void draw_about(GContext *ctx) {
     graphics_draw_bitmap_in_rect(ctx, current_status_mascot(), GRect(76, y, 48, 48));
   }
   y += 53;
-  draw_text(ctx, "dreamwave", fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), c.foreground,
+  draw_text(ctx, "dreamwave", ui_font(FONT_KEY_GOTHIC_24_BOLD), c.foreground,
             GRect(10, y, 180, 30), GTextAlignmentCenter);
   y += 30;
-  draw_text(ctx, "Music made for Pebble", fonts_get_system_font(FONT_KEY_GOTHIC_18), c.secondary,
+  draw_text(ctx, "Music made for Pebble", ui_font(FONT_KEY_GOTHIC_18), c.secondary,
             GRect(10, y, 180, 24), GTextAlignmentCenter);
   y += 26;
   draw_text(ctx, s_bridge_ready ? "Phone bridge connected" : "Phone bridge unavailable",
-            fonts_get_system_font(FONT_KEY_GOTHIC_14), c.secondary,
+            ui_font(FONT_KEY_GOTHIC_14), c.secondary,
             GRect(10, y, 180, 22), GTextAlignmentCenter);
   y += 30;
 
   graphics_context_set_fill_color(ctx, c.surface);
   graphics_fill_rect(ctx, GRect(20, y, 160, 46), 4, GCornersAll);
-  draw_text(ctx, "VERSION", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), c.secondary,
+  draw_text(ctx, "VERSION", ui_font(FONT_KEY_GOTHIC_14_BOLD), c.secondary,
              GRect(31, y + 5, 138, 16), GTextAlignmentCenter);
-  draw_text(ctx, "0.1.0", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+  draw_text(ctx, APP_VERSION, ui_font(FONT_KEY_GOTHIC_18_BOLD),
              GColorBlack,
              GRect(31, y + 20, 138, 22), GTextAlignmentCenter);
   y += 57;
@@ -2495,13 +3007,13 @@ static void draw_about(GContext *ctx) {
   graphics_draw_line(ctx, GPoint(16, y), GPoint(184, y));
   y += 8;
 
-  draw_text(ctx, "ACKNOWLEDGEMENTS", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+  draw_text(ctx, "ACKNOWLEDGEMENTS", ui_font(FONT_KEY_GOTHIC_14_BOLD),
             c.accent, GRect(10, y, 180, 25), GTextAlignmentCenter);
   y += 24;
   for (unsigned i = 0; i < ARRAY_LENGTH(ACK_NAMES); i++) {
-    draw_text(ctx, ACK_NAMES[i], fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), c.foreground,
+    draw_text(ctx, ACK_NAMES[i], ui_font(FONT_KEY_GOTHIC_14_BOLD), c.foreground,
               GRect(12, y, 176, 18), GTextAlignmentLeft);
-    draw_text(ctx, ACK_DESC[i], fonts_get_system_font(FONT_KEY_GOTHIC_14), c.secondary,
+    draw_text(ctx, ACK_DESC[i], ui_font(FONT_KEY_GOTHIC_14), c.secondary,
               GRect(12, y + 16, 176, 18), GTextAlignmentLeft);
     y += 39;
   }
@@ -2513,7 +3025,7 @@ static void draw_about(GContext *ctx) {
 
   graphics_context_set_fill_color(ctx, c.accent);
   graphics_fill_rect(ctx, GRect(0, 0, 200, 31), 0, GCornerNone);
-  draw_text(ctx, "ABOUT", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GColorWhite,
+  draw_text(ctx, "ABOUT", ui_font(FONT_KEY_GOTHIC_18_BOLD), GColorWhite,
              GRect(8, 4, 184, 24), GTextAlignmentLeft);
   // Pixel-based scrollbar: the viewport is the visible area below the header and
   // the content extent is that viewport plus however far the content overflows.
@@ -2555,19 +3067,19 @@ static void draw_keyboard(GContext *ctx) {
     graphics_context_set_fill_color(ctx, GColorLightGray);
     graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
 
-    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_context_set_fill_color(ctx, ui_bg());
     graphics_fill_rect(ctx, GRect(2, 2, 196, 53), 4, GCornersAll);
     draw_text(ctx, s_query_length > 0 ? s_query : "Start typing...",
-              fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-              s_query_length > 0 ? GColorBlack : GColorDarkGray,
+              ui_font(FONT_KEY_GOTHIC_18_BOLD),
+              s_query_length > 0 ? ui_fg() : ui_dim(),
               GRect(8, 8, 184, 39), GTextAlignmentLeft);
 
     const bool numbers = s_keyboard_mode == 2;
     const bool uppercase = s_keyboard_mode == 1;
-    draw_text(ctx, "HELP", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GColorDarkGray,
+    draw_text(ctx, "HELP", ui_font(FONT_KEY_GOTHIC_14_BOLD), GColorDarkGray,
               GRect(153, 4, 38, 16), GTextAlignmentRight);
     draw_text(ctx, numbers ? "123" : uppercase ? "ABC" : "abc",
-              fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), accent_color(),
+              ui_font(FONT_KEY_GOTHIC_14_BOLD), accent_color(),
               GRect(153, 37, 38, 16), GTextAlignmentRight);
 
     for (int row = 0; row < 3; row++) {
@@ -2614,19 +3126,19 @@ static void draw_keyboard(GContext *ctx) {
           }
         }
 
-        graphics_context_set_fill_color(ctx, active ? accent_color() : GColorWhite);
+        graphics_context_set_fill_color(ctx, active ? accent_color() : ui_bg());
         graphics_fill_rect(ctx, GRect(x, y, cell_w, cell_h), 3, GCornersAll);
         if (numbers && i == PT2_ZERO_CELL && !zero_fan) {
           // Idle "8" cell: a large 8 with a small 0 hint (swipe up-right for 0).
-          GColor glyph = active ? GColorWhite : dimmed ? GColorLightGray : GColorBlack;
-          draw_text(ctx, "8", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), glyph,
+          GColor glyph = active ? on_accent_color() : dimmed ? GColorLightGray : ui_fg();
+          draw_text(ctx, "8", ui_font(FONT_KEY_GOTHIC_18_BOLD), glyph,
                     GRect(x + 2, y + 16, cell_w - 4, 23), GTextAlignmentCenter);
-          draw_text(ctx, "0", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-                    active ? GColorWhite : GColorLightGray,
+          draw_text(ctx, "0", ui_font(FONT_KEY_GOTHIC_14_BOLD),
+                    active ? on_accent_color() : GColorLightGray,
                     GRect(x + cell_w - 20, y + 3, 16, 14), GTextAlignmentRight);
         } else {
-          draw_text(ctx, display, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-                    active ? GColorWhite : dimmed ? GColorLightGray : GColorBlack,
+          draw_text(ctx, display, ui_font(FONT_KEY_GOTHIC_18_BOLD),
+                    active ? on_accent_color() : dimmed ? GColorLightGray : ui_fg(),
                     GRect(x + 2, y + 16, cell_w - 4, 23), GTextAlignmentCenter);
         }
       }
@@ -2642,16 +3154,16 @@ static void draw_keyboard(GContext *ctx) {
   const int bar_x = 144;
   const int segment_height = 76;
 
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   graphics_context_set_fill_color(ctx, accent_color());
   graphics_fill_rect(ctx, GRect(0, 0, bar_x, 31), 0, GCornerNone);
-  draw_text(ctx, "TYPE SEARCH", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GColorWhite,
+  draw_text(ctx, "TYPE SEARCH", ui_font(FONT_KEY_GOTHIC_18_BOLD), on_accent_color(),
             GRect(8, 4, bar_x - 14, 24), GTextAlignmentLeft);
 
   draw_text(ctx, s_query_length > 0 ? s_query : "Start typing...",
-            fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-            s_query_length > 0 ? GColorBlack : GColorDarkGray,
+            ui_font(FONT_KEY_GOTHIC_18_BOLD),
+            s_query_length > 0 ? ui_fg() : ui_dim(),
             GRect(8, 39, bar_x - 16, 126), GTextAlignmentLeft);
 
   // Sidebar: mirrors the action bar's resting background.
@@ -2685,7 +3197,7 @@ static void draw_keyboard(GContext *ctx) {
         char group[4];
         memcpy(group, characters + group_start + column * 3, 3);
         group[3] = '\0';
-        draw_text(ctx, group, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), key_color,
+        draw_text(ctx, group, ui_font(FONT_KEY_GOTHIC_14_BOLD), key_color,
                   GRect(bar_x + 4, row * segment_height + 8 + column * 18, 48, 18),
                   GTextAlignmentCenter);
       }
@@ -2695,7 +3207,7 @@ static void draw_keyboard(GContext *ctx) {
     for (int row = 0; row < 3; row++) {
       GColor key_color = row == pressed_row ? c.action_bar_press_icon : c.action_bar_icon;
       keyboard_option(option[row], sizeof(option[row]), row);
-      draw_text(ctx, option[row], fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), key_color,
+      draw_text(ctx, option[row], ui_font(FONT_KEY_GOTHIC_24_BOLD), key_color,
                 GRect(bar_x + 3, row * segment_height + 23, 50, 32), GTextAlignmentCenter);
     }
   }
@@ -2704,28 +3216,28 @@ static void draw_keyboard(GContext *ctx) {
   snprintf(footer, sizeof(footer), "%s  %d/80", keyboard_mode_label(), s_query_length);
   graphics_context_set_fill_color(ctx, GColorLightGray);
   graphics_fill_rect(ctx, GRect(5, 177, bar_x - 10, 23), 4, GCornersAll);
-  draw_text(ctx, footer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GColorBlack,
+  draw_text(ctx, footer, ui_font(FONT_KEY_GOTHIC_14_BOLD), ui_fg(),
             GRect(8, 180, bar_x - 16, 18), GTextAlignmentCenter);
   draw_text(ctx, s_keyboard_size == 27 ? "BACK: DELETE / EXIT" : "BACK: PREVIOUS",
-            fonts_get_system_font(FONT_KEY_GOTHIC_14), GColorDarkGray,
+            ui_font(FONT_KEY_GOTHIC_14), GColorDarkGray,
             GRect(5, 204, bar_x - 10, 18), GTextAlignmentCenter);
 }
 
 static void draw_placeholder_screen(GContext *ctx) {
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   draw_header(ctx, s_placeholder_title);
   draw_status_mascot(ctx, GPoint(76, 62));
-  draw_text(ctx, s_placeholder_message, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-            GColorBlack, GRect(18, 157, 164, 48), GTextAlignmentCenter);
+  draw_text(ctx, s_placeholder_message, ui_font(FONT_KEY_GOTHIC_18_BOLD),
+            ui_fg(), GRect(18, 157, 164, 48), GTextAlignmentCenter);
 }
 
 static void draw_searching(GContext *ctx) {
   ThemeColors c = colors();
   draw_header(ctx, "PHONE LINK");
-  draw_text(ctx, "SEARCHING FOR", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+  draw_text(ctx, "SEARCHING FOR", ui_font(FONT_KEY_GOTHIC_14_BOLD),
             c.secondary, GRect(10, 31, 180, 19), GTextAlignmentLeft);
-  draw_text(ctx, s_query, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), c.foreground,
+  draw_text(ctx, s_query, ui_font(FONT_KEY_GOTHIC_24_BOLD), c.foreground,
             GRect(10, 52, 180, 70), GTextAlignmentLeft);
   for (int i = 0; i < 7; i++) {
     int distance = (i - (s_animation_frame % 7) + 7) % 7;
@@ -2733,7 +3245,7 @@ static void draw_searching(GContext *ctx) {
     graphics_context_set_fill_color(ctx, distance <= 1 || distance == 6 ? c.accent : c.surface);
     graphics_fill_circle(ctx, GPoint(49 + i * 17, 180), radius);
   }
-  draw_text(ctx, "Android is finding audio", fonts_get_system_font(FONT_KEY_GOTHIC_14),
+  draw_text(ctx, "Android is finding audio", ui_font(FONT_KEY_GOTHIC_14),
             c.foreground, GRect(10, 199, 180, 22), GTextAlignmentCenter);
 }
 
@@ -2756,34 +3268,34 @@ static void draw_modern_results(GContext *ctx) {
   // hands every populated result list to the MenuLayer, so there is no row-drawing
   // path here to keep.
   if (screen_uses_native_menu(ScreenResults)) return;
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   graphics_context_set_fill_color(ctx, accent_color());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 31), 0, GCornerNone);
-  draw_text(ctx, "SEARCH RESULTS", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-            GColorWhite, GRect(8, 4, 184, 24), GTextAlignmentLeft);
-  draw_text(ctx, s_query, fonts_get_system_font(FONT_KEY_GOTHIC_14), GColorDarkGray,
+  draw_text(ctx, "SEARCH RESULTS", ui_font(FONT_KEY_GOTHIC_18_BOLD),
+            on_accent_color(), GRect(8, 4, 184, 24), GTextAlignmentLeft);
+  draw_text(ctx, s_query, ui_font(FONT_KEY_GOTHIC_14), GColorDarkGray,
             GRect(9, 34, 182, 20), GTextAlignmentLeft);
   draw_status_mascot(ctx, GPoint(76, 55));
-  draw_text(ctx, "No songs found", fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
-            GColorBlack, GRect(16, 109, 168, 34), GTextAlignmentCenter);
-  draw_text(ctx, "Select to search again", fonts_get_system_font(FONT_KEY_GOTHIC_14),
+  draw_text(ctx, "No songs found", ui_font(FONT_KEY_GOTHIC_24_BOLD),
+            ui_fg(), GRect(16, 109, 168, 34), GTextAlignmentCenter);
+  draw_text(ctx, "Select to search again", ui_font(FONT_KEY_GOTHIC_14),
             GColorDarkGray, GRect(10, 148, 180, 22), GTextAlignmentCenter);
 }
 
 static void draw_modern_buffering(GContext *ctx) {
   const SearchResult *result = current_playing_result();
   if (!result) return;
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   // Chromeless, on the pager grid: eyebrow, track title in the 28px slot, artist in
   // the 18px description slot, and the equalizer bars centered on the icon line
   // (cy=158) - so the handoff to Now Playing reads as one screen fading into the next.
-  draw_text(ctx, "FINDING AUDIO", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GColorBlack, GRect(18, 18, 164, 18), GTextAlignmentLeft);
-  draw_text(ctx, result->title, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD),
-            GColorBlack, GRect(18, 54, 164, 40), GTextAlignmentLeft);
-  draw_text(ctx, result->artist, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+  draw_text(ctx, "FINDING AUDIO", ui_font(FONT_KEY_GOTHIC_14_BOLD),
+            ui_fg(), GRect(18, 18, 164, 18), GTextAlignmentLeft);
+  draw_text(ctx, result->title, ui_font(FONT_KEY_GOTHIC_28_BOLD),
+            ui_fg(), GRect(18, 54, 164, 40), GTextAlignmentLeft);
+  draw_text(ctx, result->artist, ui_font(FONT_KEY_GOTHIC_18),
             GColorDarkGray, GRect(18, 96, 164, 24), GTextAlignmentLeft);
   for (int i = 0; i < 5; i++) {
     int phase = (s_animation_frame + i) % 5;
@@ -2791,8 +3303,8 @@ static void draw_modern_buffering(GContext *ctx) {
     graphics_context_set_fill_color(ctx, accent_color());
     graphics_fill_rect(ctx, GRect(55 + i * 20, 158 - height / 2, 10, height), 3, GCornersAll);
   }
-  draw_text(ctx, "BACK cancel", fonts_get_system_font(FONT_KEY_GOTHIC_14),
-            GColorBlack, GRect(8, 202, 184, 18), GTextAlignmentCenter);
+  draw_text(ctx, "BACK cancel", ui_font(FONT_KEY_GOTHIC_14),
+            ui_fg(), GRect(8, 202, 184, 18), GTextAlignmentCenter);
 }
 
 static void draw_results(GContext *ctx) {
@@ -2841,33 +3353,30 @@ static void draw_shuffle_icon(GContext *ctx, GPoint center, GColor color) {
                      GPoint(center.x + 4, center.y - 4));
 }
 
-static void draw_skip_icon(GContext *ctx, GPoint center, GColor color, bool next) {
+// Skip glyph: a filled triangle butted against a bar. 'half_h' is half the glyph's
+// height - 8 reproduces the small inline icon exactly, and the artwork overlay asks
+// for a much larger one, which is why this is parameterised rather than two sizes
+// drawn by hand.
+static void draw_skip_glyph(GContext *ctx, GPoint c, GColor color, bool next, int half_h) {
+  const int reach = half_h * 3 / 4;              // how far the triangle's back edge sits
+  const int bar = half_h / 4 < 2 ? 2 : half_h / 4;
+  const int dir = next ? 1 : -1;
   graphics_context_set_fill_color(ctx, color);
-  graphics_context_set_stroke_color(ctx, color);
-  graphics_context_set_stroke_width(ctx, 2);
-  if (next) {
-    GPoint tri[] = {
-      GPoint(center.x - 6, center.y - 8),
-      GPoint(center.x + 4, center.y),
-      GPoint(center.x - 6, center.y + 8),
-    };
-    GPathInfo info = { .num_points = ARRAY_LENGTH(tri), .points = tri };
-    GPath *path = gpath_create(&info);
-    gpath_draw_filled(ctx, path);
-    gpath_destroy(path);
-    graphics_fill_rect(ctx, GRect(center.x + 6, center.y - 8, 2, 16), 0, GCornerNone);
-  } else {
-    GPoint tri[] = {
-      GPoint(center.x + 6, center.y - 8),
-      GPoint(center.x - 4, center.y),
-      GPoint(center.x + 6, center.y + 8),
-    };
-    GPathInfo info = { .num_points = ARRAY_LENGTH(tri), .points = tri };
-    GPath *path = gpath_create(&info);
-    gpath_draw_filled(ctx, path);
-    gpath_destroy(path);
-    graphics_fill_rect(ctx, GRect(center.x - 8, center.y - 8, 2, 16), 0, GCornerNone);
-  }
+  GPoint tri[] = {
+    GPoint(c.x - dir * reach, c.y - half_h),
+    GPoint(c.x + dir * (half_h / 2), c.y),
+    GPoint(c.x - dir * reach, c.y + half_h),
+  };
+  GPathInfo info = { .num_points = ARRAY_LENGTH(tri), .points = tri };
+  GPath *path = gpath_create(&info);
+  gpath_draw_filled(ctx, path);
+  gpath_destroy(path);
+  graphics_fill_rect(ctx, GRect(next ? c.x + reach : c.x - reach - bar, c.y - half_h,
+                                bar, half_h * 2), 0, GCornerNone);
+}
+
+static void draw_skip_icon(GContext *ctx, GPoint center, GColor color, bool next) {
+  draw_skip_glyph(ctx, center, color, next, 8);
 }
 
 // Draws a heart centered at 'center'. 'scale' is roughly half the heart width in
@@ -2923,80 +3432,32 @@ static void draw_watch_icon(GContext *ctx, GPoint center, int scale, GColor colo
   graphics_fill_rect(ctx, GRect(center.x - s / 4, center.y + s / 2, s / 2, 4), 1, GCornersAll);
 }
 
-// Draws the transient long-press confirmation overlay (heart / phone / watch)
-// centered on the playing screen with a rounded backing card.
+// The keyboard's "how do I type on this" card. This routine used to serve the Now
+// Playing confirmations too - a 72px box with a glyph and a label under it - but those
+// moved onto the artwork (draw_art_answer()), and the keyboard has no artwork to move
+// onto, so the card survives here and only here.
 static void draw_feedback_overlay(GContext *ctx) {
-  if (s_feedback_icon == FeedbackNone) return;
-  if (s_feedback_icon == FeedbackKeyboardHint) {
-    const int box_w = 180;
-    const int box_h = 70;
-    GRect card = GRect(100 - box_w / 2, 114 - box_h / 2, box_w, box_h);
-    graphics_context_set_fill_color(ctx, GColorBlack);
-    graphics_fill_rect(ctx, card, 10, GCornersAll);
-    graphics_context_set_stroke_color(ctx, GColorWhite);
-    graphics_context_set_stroke_width(ctx, 2);
-    graphics_draw_round_rect(ctx, card, 10);
-    draw_text(ctx, "Tap for key", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-              GColorWhite, GRect(card.origin.x + 6, card.origin.y + 4, box_w - 12, 16),
-              GTextAlignmentCenter);
-    draw_text(ctx, "Swipe for letters", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-              GColorWhite, GRect(card.origin.x + 6, card.origin.y + 19, box_w - 12, 16),
-              GTextAlignmentCenter);
-    draw_text(ctx, "UP mode   SELECT enter",
-              fonts_get_system_font(FONT_KEY_GOTHIC_14), GColorWhite,
-              GRect(card.origin.x + 6, card.origin.y + 35, box_w - 12, 16), GTextAlignmentCenter);
-    draw_text(ctx, "DOWN delete   HELP info",
-              fonts_get_system_font(FONT_KEY_GOTHIC_14), GColorWhite,
-              GRect(card.origin.x + 6, card.origin.y + 50, box_w - 12, 16), GTextAlignmentCenter);
-    return;
-  }
-  const int box = 72;
-  GRect card = GRect(100 - box / 2, 114 - box / 2, box, box);
-  graphics_context_set_fill_color(ctx, GColorBlack);
+  if (s_feedback_icon != FeedbackKeyboardHint) return;
+  const int box_w = 180;
+  const int box_h = 70;
+  GRect card = GRect(100 - box_w / 2, 114 - box_h / 2, box_w, box_h);
+  graphics_context_set_fill_color(ctx, ui_fg());
   graphics_fill_rect(ctx, card, 10, GCornersAll);
-  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_color(ctx, ui_bg());
   graphics_context_set_stroke_width(ctx, 2);
   graphics_draw_round_rect(ctx, card, 10);
-  GPoint c = GPoint(100, 112);
-  switch (s_feedback_icon) {
-    case FeedbackFavoriteOn:  draw_heart_icon(ctx, c, 16, accent_color(), true); break;
-    case FeedbackFavoriteOff: draw_heart_icon(ctx, c, 16, GColorWhite, false); break;
-    case FeedbackOutputPhone: draw_phone_icon(ctx, c, 26, GColorWhite); break;
-    case FeedbackOutputWatch: draw_watch_icon(ctx, c, 28, GColorWhite); break;
-    case FeedbackShuffleOn:   draw_shuffle_icon(ctx, c, accent_color()); break;
-    case FeedbackShuffleOff:  draw_shuffle_icon(ctx, c, GColorWhite); break;
-    case FeedbackNext:        draw_skip_icon(ctx, c, GColorWhite, true); break;
-    case FeedbackPrev:        draw_skip_icon(ctx, c, GColorWhite, false); break;
-    case FeedbackPlay: {
-      graphics_context_set_fill_color(ctx, GColorWhite);
-      GPoint tri[] = { GPoint(c.x - 8, c.y - 12), GPoint(c.x + 12, c.y), GPoint(c.x - 8, c.y + 12) };
-      GPathInfo pi = { .num_points = 3, .points = tri };
-      GPath *p = gpath_create(&pi);
-      gpath_draw_filled(ctx, p);
-      gpath_destroy(p);
-      break;
-    }
-    case FeedbackPause:
-      graphics_context_set_fill_color(ctx, GColorWhite);
-      graphics_fill_rect(ctx, GRect(c.x - 9, c.y - 12, 6, 24), 0, GCornerNone);
-      graphics_fill_rect(ctx, GRect(c.x + 3, c.y - 12, 6, 24), 0, GCornerNone);
-      break;
-    case FeedbackNone:
-    case FeedbackKeyboardHint: break;
-  }
-  const char *label =
-      s_feedback_icon == FeedbackFavoriteOn ? "Favorited" :
-      s_feedback_icon == FeedbackFavoriteOff ? "Unfavorited" :
-      s_feedback_icon == FeedbackShuffleOn ? "Shuffle on" :
-      s_feedback_icon == FeedbackShuffleOff ? "Shuffle off" :
-      s_feedback_icon == FeedbackOutputPhone ? "Phone" :
-      s_feedback_icon == FeedbackOutputWatch ? "Watch" :
-      s_feedback_icon == FeedbackPlay ? "Play" :
-      s_feedback_icon == FeedbackPause ? "Pause" :
-      s_feedback_icon == FeedbackNext ? "Next" :
-      s_feedback_icon == FeedbackPrev ? "Previous" : "";
-  draw_text(ctx, label, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GColorWhite,
-            GRect(card.origin.x - 20, card.origin.y + box + 2, box + 40, 18), GTextAlignmentCenter);
+  draw_text(ctx, "Tap for key", ui_font(FONT_KEY_GOTHIC_14_BOLD),
+            ui_bg(), GRect(card.origin.x + 6, card.origin.y + 4, box_w - 12, 16),
+            GTextAlignmentCenter);
+  draw_text(ctx, "Swipe for letters", ui_font(FONT_KEY_GOTHIC_14_BOLD),
+            ui_bg(), GRect(card.origin.x + 6, card.origin.y + 19, box_w - 12, 16),
+            GTextAlignmentCenter);
+  draw_text(ctx, "UP mode   SELECT enter",
+            ui_font(FONT_KEY_GOTHIC_14), ui_bg(),
+            GRect(card.origin.x + 6, card.origin.y + 35, box_w - 12, 16), GTextAlignmentCenter);
+  draw_text(ctx, "DOWN delete   HELP info",
+            ui_font(FONT_KEY_GOTHIC_14), ui_bg(),
+            GRect(card.origin.x + 6, card.origin.y + 50, box_w - 12, 16), GTextAlignmentCenter);
 }
 
 static void draw_action_bar_icon(GContext *ctx, ButtonId button, GPoint center, GColor color,
@@ -3105,7 +3566,7 @@ static void draw_action_bar(GContext *ctx, bool paused) {
 static void draw_play_button(GContext *ctx, GPoint center, int radius, bool paused) {
   graphics_context_set_fill_color(ctx, accent_color());
   graphics_fill_circle(ctx, center, radius);
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, on_accent_color());
   if (paused) {
     GPoint play[] = {
       GPoint(center.x - 5, center.y - 9),
@@ -3219,16 +3680,16 @@ static int np_more_count(void);
 // icon language as the playback controls - rather than the settings-menu list style.
 static void draw_np_more(GContext *ctx) {
   // Plain solid panel (a dimmed-artwork background was tried but was too slow to redraw).
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   // Eyebrow is black like every other 14px label, and names its parent screen so
   // the popup reads as part of Now Playing rather than a foreign modal; the 18px
   // state value keeps the gray so the big action name stays on top of the hierarchy.
-  GColor dim_text = GColorDarkGray;
-  GColor name_text = GColorBlack;
-  GColor idle_glyph = GColorBlack;
+  GColor dim_text = ui_dim();
+  GColor name_text = ui_fg();
+  GColor idle_glyph = ui_fg();
 
-  draw_text(ctx, "NOW PLAYING", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GColorBlack,
+  draw_text(ctx, "NOW PLAYING", ui_font(FONT_KEY_GOTHIC_14_BOLD), ui_fg(),
             GRect(18, 18, 164, 18), GTextAlignmentLeft);
 
   // The selected action's name and current state, echoing the track title/artist.
@@ -3244,10 +3705,10 @@ static void draw_np_more(GContext *ctx) {
     case 3: snprintf(value, sizeof value, "%s", s_phone_audio ? "Phone" : "Watch"); break;
     default: value[0] = '\0'; break;
   }
-  draw_text(ctx, names[s_np_more_selection], fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD),
+  draw_text(ctx, names[s_np_more_selection], ui_font(FONT_KEY_GOTHIC_28_BOLD),
             name_text, GRect(18, 54, 164, 40), GTextAlignmentLeft);
   if (value[0]) {
-    draw_text(ctx, value, fonts_get_system_font(FONT_KEY_GOTHIC_18), dim_text,
+    draw_text(ctx, value, ui_font(FONT_KEY_GOTHIC_18), dim_text,
               GRect(18, 96, 164, 24), GTextAlignmentLeft);
   }
 
@@ -3265,7 +3726,7 @@ static void draw_np_more(GContext *ctx) {
     if (selected) {
       graphics_context_set_fill_color(ctx, accent_color());
       graphics_fill_circle(ctx, GPoint(cx, cy), 17);
-      glyph = GColorWhite;
+      glyph = on_accent_color();
     } else {
       glyph = active ? accent_color() : idle_glyph;
     }
@@ -3289,154 +3750,304 @@ static void draw_np_more(GContext *ctx) {
   }
 
   draw_text(ctx, "SELECT choose    BACK close",
-            fonts_get_system_font(FONT_KEY_GOTHIC_14), GColorBlack,
+            ui_font(FONT_KEY_GOTHIC_14), ui_fg(),
             GRect(8, 202, 184, 18), GTextAlignmentCenter);
 }
 
-// "Beak FM" style Now Playing layout: a plain white canvas with a small
-// source glyph (phone/watch) up top, large title/artist, an optional
-// progress bar (see the "Progress bar" setting), and a floating accent-color
-// play/pause button in place of the old colored header/footer bars. Used for
-// every theme; only the accent (and, for the Mono theme, the action bar)
-// colors change between themes.
+// Now Playing geometry, in one place. draw_modern_song() draws from this and
+// np_touch_handle() hit-tests against it: they used to derive the same numbers
+// separately and drifted apart, which left the repeat hit-test 26px from the icon it
+// was meant to hit whenever the action bar was showing. Anything positional on this
+// screen belongs here.
+//
+// The layout is two detached cards. The artwork card is deliberately the exact rect
+// draw_home_hero() gives the cover - 190x108 at (5,6), its card width by its card
+// height less the band - so opening Now Playing from Home leaves the sleeve on the
+// same pixels and only the card underneath it changes. The accent card below holds
+// everything else: times, title, artist, and the shuffle/loop icons.
+typedef struct {
+  GRect art;         // artwork card
+  GRect rail;        // progress, in the gap between the two cards
+  GRect card;        // accent card
+  GRect remaining;   // time chip, artwork's bottom-left corner
+  GRect total;       // time chip, artwork's bottom-right corner
+  GRect title;
+  GRect artist;
+  GPoint output;     // phone/watch badge, artwork's top-left corner
+  GPoint favorite;   // heart badge, artwork's top-right corner
+  GPoint shuffle;
+  GPoint loop;
+} NowPlayingLayout;
+
+static NowPlayingLayout np_layout(void) {
+  NowPlayingLayout l;
+  // The artwork takes Home's whole card footprint - the art region *and* the band it
+  // sits above - rather than just the art region, so opening Now Playing turns the
+  // card you were looking at into pure cover without moving its edges.
+  l.art  = GRect(5, 6, 190, 150);
+  // 6px, centred in the gap. It was 4px and got lost: unlike Home's rail, which is
+  // pinned between the art and the band and reads off both, this one floats with
+  // nothing to give it an edge.
+  l.rail = GRect(5, 160, 190, 6);
+  // Battery-saver hides the rail, and with it the gap the rail needed. Rather than
+  // leave a band of bare ground between the two cards, the card reclaims it and grows
+  // upward - the artwork keeps its size either way, so the pair still reads as a pair.
+  const int card_top = s_show_progress ? 170 : 162;
+  l.card = GRect(5, card_top, 190, 222 - card_top);
+
+  // Badges on the artwork's corners, inset clear of the rounded caps. These are the
+  // only things drawn over the cover, and each gets a solid disc behind it, so none
+  // of them depends on what the artwork happens to look like underneath.
+  l.output   = GPoint(l.art.origin.x + 18, l.art.origin.y + 18);
+  l.favorite = GPoint(l.art.origin.x + l.art.size.w - 18, l.art.origin.y + 18);
+  // Time chips on the bottom corners, in the same badge language.
+  const int chip_w = 44, chip_h = 18;
+  const int chip_y = l.art.origin.y + l.art.size.h - chip_h - 6;
+  l.remaining = GRect(l.art.origin.x + 6, chip_y, chip_w, chip_h);
+  l.total     = GRect(l.art.origin.x + l.art.size.w - chip_w - 6, chip_y, chip_w, chip_h);
+
+  // The toggles are centred on the card, so they occupy a column down its right side
+  // rather than a corner - which means the text has to clear them on both lines, not
+  // just the artist's. That is what caps the text column at 120px.
+  const int toggles_y = l.card.origin.y + l.card.size.h / 2;
+  l.shuffle = GPoint(154, toggles_y);
+  l.loop    = GPoint(178, toggles_y);
+
+  // The card holds nothing but the track, bottom-aligned against its lower edge, so
+  // the type can be as large as the space allows instead of floating in the middle.
+  l.title  = GRect(15, 173, 120, 26);
+  l.artist = GRect(15, 199, 120, 20);
+  return l;
+}
+
+// A time readout on the artwork's corner: ground-colored pill, ink text. Same badge
+// treatment as the corner glyphs, for the same reason - it has to stay readable over
+// a cover whose colors nobody chose. Empty text draws nothing rather than a bare pill.
+static void draw_time_chip(GContext *ctx, GRect chip, const char *text) {
+  if (!text || !text[0]) return;
+  graphics_context_set_fill_color(ctx, ui_bg());
+  graphics_fill_rect(ctx, chip, 5, GCornersAll);
+  draw_text(ctx, text, ui_font(FONT_KEY_GOTHIC_14_BOLD), ui_fg(),
+            GRect(chip.origin.x, chip.origin.y + 1, chip.size.w, chip.size.h),
+            GTextAlignmentCenter);
+}
+
+// Everything the Now Playing screen has to answer, answered on the artwork.
+//
+// This used to be two other things: a 72px card that flashed over the middle of the
+// screen for skips and toggles, and a second square for volume. Both sat on top of
+// the cover, both had to pick an ink that would survive whatever was behind them, and
+// once pausing started veiling the artwork there were two competing answers to the
+// same press. Now there is one surface. The veil goes down, the answer is drawn at
+// the size of the artwork, and it reads the same whatever the cover looks like.
+//
+// Precedence is deliberate: a transient beats the resting paused state, because the
+// transient is the thing that just happened.
+static void draw_art_answer(GContext *ctx, GRect art, bool paused, bool on_art) {
+  const bool volume = s_show_volume;
+  const bool feedback = s_feedback_icon != FeedbackNone &&
+                        s_feedback_icon != FeedbackKeyboardHint;
+  if (!volume && !feedback && !paused) return;
+
+  if (on_art) draw_dither_scrim(ctx, art);
+  // Over a veiled cover white always wins. With no cover the placeholder card is
+  // showing instead, and white reads on that too.
+  const GColor ink = GColorWhite;
+  const GPoint c = GPoint(art.origin.x + art.size.w / 2, art.origin.y + art.size.h / 2);
+
+  if (volume) {
+    char pct[8];
+    snprintf(pct, sizeof pct, "%d%%", displayed_volume());
+    draw_text(ctx, "VOLUME", ui_font(FONT_KEY_GOTHIC_14_BOLD), ink,
+              GRect(art.origin.x, c.y - 46, art.size.w, 18), GTextAlignmentCenter);
+    draw_text(ctx, pct, ui_font(FONT_KEY_GOTHIC_28_BOLD), ink,
+              GRect(art.origin.x, c.y - 28, art.size.w, 36), GTextAlignmentCenter);
+    const int w = 120;
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_fill_rect(ctx, GRect(c.x - w / 2, c.y + 20, w, 8), 4, GCornersAll);
+    graphics_context_set_fill_color(ctx, accent_color());
+    graphics_fill_rect(ctx, GRect(c.x - w / 2, c.y + 20, w * displayed_volume() / 100, 8),
+                       4, GCornersAll);
+    return;
+  }
+
+  if (feedback) {
+    const GPoint g = GPoint(c.x, c.y - 14);
+    const char *label = "";
+    switch (s_feedback_icon) {
+      case FeedbackNext:
+        draw_skip_glyph(ctx, g, ink, true, 26);  label = "Next"; break;
+      case FeedbackPrev:
+        draw_skip_glyph(ctx, g, ink, false, 26); label = "Previous"; break;
+      case FeedbackFavoriteOn:
+        draw_heart_icon(ctx, g, 22, accent_color(), true);  label = "Favorited"; break;
+      case FeedbackFavoriteOff:
+        draw_heart_icon(ctx, g, 22, ink, false);            label = "Unfavorited"; break;
+      case FeedbackShuffleOn:
+        draw_shuffle_icon(ctx, g, accent_color());          label = "Shuffle on"; break;
+      case FeedbackShuffleOff:
+        draw_shuffle_icon(ctx, g, ink);                     label = "Shuffle off"; break;
+      case FeedbackOutputPhone:
+        draw_phone_icon(ctx, g, 32, ink);                   label = "Phone"; break;
+      case FeedbackOutputWatch:
+        draw_watch_icon(ctx, g, 34, ink);                   label = "Watch"; break;
+      default: break;
+    }
+    draw_text(ctx, label, ui_font(FONT_KEY_GOTHIC_18_BOLD), ink,
+              GRect(art.origin.x, c.y + 22, art.size.w, 24), GTextAlignmentCenter);
+    return;
+  }
+
+  draw_play_button(ctx, c, 20, true);
+}
+
+// One of the accent card's state toggles. The card is an accent fill, so there is no
+// third color left to dim an idle icon with - Arcade has only two colors in the whole
+// theme - and state is carried by shape instead: idle is a plain ink glyph, enabled
+// fills the ink in behind it and knocks the glyph back out in the card's own accent.
+// Same fill-in idiom the More popup uses to show which action is selected.
+static void draw_card_toggle(GContext *ctx, GPoint center, bool enabled,
+                             void (*glyph)(GContext *, GPoint, GColor)) {
+  if (enabled) {
+    graphics_context_set_fill_color(ctx, on_accent_color());
+    // 11, not 12: the two toggles sit 24px apart, so a 12 would leave their filled
+    // circles touching and read as one lozenge whenever both are on.
+    graphics_fill_circle(ctx, center, 11);
+  }
+  glyph(ctx, center, enabled ? accent_color() : on_accent_color());
+}
+
+// Two detached cards: the cover art at exactly its Home-card size, and an accent card
+// under it carrying every piece of text and every icon. There is no transport button
+// - play state is shown by veiling the artwork and dropping a resume glyph on it, and
+// only while paused, so a playing screen is just the cover and the card.
 static void draw_modern_song(GContext *ctx, AppScreen state) {
   bool paused = state == ScreenPaused;
-  int content_width = s_action_bar_visible ? 154 : 180;
   const SearchResult *result = current_playing_result();
   if (!result) return;
-  const int pad_x = 18;
-  const int inner_w = content_width - pad_x - 8;
 
-  // When cover art is showing, it *is* the background - no card behind it to dim or
-  // crop the art, just white/black UI elements laid straight over the artwork.
   bool on_art = s_cover_art_background && s_cover_art_ready;
 
   // Artwork-only mode (touchscreen long-press): fill the screen with just the cover
-  // art and nothing else. Only honored while art is actually available.
+  // art and nothing else. Only honored while art is actually available. This is also
+  // the reason the framed layout below never grows to fill the screen - the full
+  // bleed view is a gesture away, so the default does not have to try to be both.
   if (s_artwork_only && on_art) {
     draw_cover_art_background(ctx, GRect(0, 0, 200, 228));
     return;
   }
 
-  // Pick the color that won't blend into the artwork rather than always white -
-  // light covers (white backgrounds, pastel art) need black UI elements instead.
-  GColor art_ui_color = s_cover_art_dark ? GColorWhite : GColorBlack;
-  GColor ui_primary = on_art ? art_ui_color : GColorBlack;
-  GColor ui_secondary = on_art ? art_ui_color : GColorBlack;
+  const NowPlayingLayout l = np_layout();
+  const GColor ink = on_accent_color();
 
+  graphics_context_set_fill_color(ctx, ui_bg());
+  graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
+
+  // Artwork card. Nothing is ever drawn over it except the paused veil, so the
+  // per-cover luma branch that used to pick black-or-white UI is gone: no text lands
+  // on artwork any more, and s_cover_art_dark no longer has anything to decide.
   if (on_art) {
-    draw_cover_art_background(ctx, GRect(0, 0, 200, 228));
+    draw_cover_art_ex(ctx, l.art, true);
+    stamp_corner_caps(ctx, l.art, ui_bg());
   } else {
-    graphics_context_set_fill_color(ctx, GColorWhite);
-    graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
+    draw_art_placeholder(ctx, l.art, s_cover_art_receiving, GCornersAll);
   }
 
-  // Source row: small phone/watch glyph plus a lowercase "on phone"/"on watch" label.
-  GPoint source_icon = GPoint(pad_x + 7, 25);
+  // Pause, volume, skips and toggles all answer here, on the artwork. Playing with
+  // nothing happening draws none of it, so the resting screen is just the cover.
+  draw_art_answer(ctx, l.art, paused, on_art);
+
+  // Corner badges, drawn after the veil so they stay crisp while paused. Each sits on
+  // a solid disc of the ground color: the accent alone can land on a cover close
+  // enough in tone to swallow it, and these are the only glyphs left that have to
+  // survive whatever the artwork happens to be.
+  graphics_context_set_fill_color(ctx, ui_bg());
+  graphics_fill_circle(ctx, l.output, 13);
   if (s_phone_audio) {
-    draw_phone_icon(ctx, source_icon, 13, ui_secondary);
+    draw_phone_icon(ctx, l.output, 13, accent_color());
   } else {
-    draw_watch_icon(ctx, source_icon, 14, ui_secondary);
+    draw_watch_icon(ctx, l.output, 14, accent_color());
   }
-  draw_text(ctx, s_phone_audio ? "on phone" : "on watch",
-            fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), ui_secondary,
-            GRect(pad_x + 20, 16, inner_w - 20, 18), GTextAlignmentLeft);
-  // Persistent favorite badge (hidden while the action bar covers it).
-  if (s_current_favorite && !s_action_bar_visible) {
-    draw_heart_icon(ctx, GPoint(content_width - 12, 25), 8, accent_color(), true);
+  if (s_current_favorite) {
+    graphics_context_set_fill_color(ctx, ui_bg());
+    graphics_fill_circle(ctx, l.favorite, 13);
+    draw_heart_icon(ctx, l.favorite, 9, accent_color(), true);
   }
 
-  draw_text(ctx, result->title, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD), ui_primary,
-            GRect(pad_x, 47, inner_w, s_show_progress ? 64 : 86), GTextAlignmentLeft);
-  draw_text(ctx, result->artist, fonts_get_system_font(FONT_KEY_GOTHIC_18), ui_secondary,
-            GRect(pad_x, s_show_progress ? 113 : 129, inner_w, 24), GTextAlignmentLeft);
-
-  int play_button_y;
+  // Progress lives in the gap between the two cards, so it reads as belonging to the
+  // artwork rather than to the text. Under the bespoke UI the volume gets the shared
+  // popup card like every other transient, which leaves the rail showing progress.
+  bool volume_on_rail = s_show_volume && !s_bespoke_ui;
+  uint32_t elapsed = s_elapsed_seconds > s_duration_seconds ? s_duration_seconds
+                                                            : s_elapsed_seconds;
   if (s_show_progress) {
     int filled_width = 0;
-    if (s_show_volume) {
-      filled_width = inner_w * displayed_volume() / 100;
+    if (volume_on_rail) {
+      filled_width = l.rail.size.w * displayed_volume() / 100;
     } else if (s_duration_seconds > 0) {
-      uint32_t elapsed = s_elapsed_seconds > s_duration_seconds ? s_duration_seconds : s_elapsed_seconds;
-      filled_width = inner_w * elapsed / s_duration_seconds;
+      filled_width = l.rail.size.w * elapsed / s_duration_seconds;
     }
-    GColor track_color = on_art ? (s_cover_art_dark ? GColorLightGray : GColorDarkGray) : GColorLightGray;
-    graphics_context_set_fill_color(ctx, track_color);
-    graphics_fill_rect(ctx, GRect(pad_x, 149, inner_w, 5), 3, GCornersAll);
+    // Black track rather than the dim ink: the rail floats on the ground with the
+    // accent running along it, and light gray on a deep ground put too little between
+    // the played and unplayed halves to read at 6px.
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_fill_rect(ctx, l.rail, 2, GCornersAll);
     graphics_context_set_fill_color(ctx, accent_color());
-    graphics_fill_rect(ctx, GRect(pad_x, 149, filled_width, 5), 3, GCornersAll);
+    graphics_fill_rect(ctx, GRect(l.rail.origin.x, l.rail.origin.y, filled_width,
+                                  l.rail.size.h), 2, GCornersAll);
 
+    // Remaining and total, as chips on the artwork's bottom corners - the pair that
+    // answers "how much longer" without making you subtract. They are chips rather
+    // than bare text because this is the one place numbers land on the cover.
     char left[16];
     char right[16];
-    if (s_show_volume) {
-      snprintf(left, sizeof(left), "VOLUME");
+    if (volume_on_rail) {
+      snprintf(left, sizeof(left), "VOL");
       snprintf(right, sizeof(right), "%d%%", displayed_volume());
-    } else {
-      format_time(s_elapsed_seconds, left, sizeof(left));
+    } else if (s_duration_seconds > 0) {
+      char remaining[12];
+      format_time(s_duration_seconds - elapsed, remaining, sizeof(remaining));
+      snprintf(left, sizeof(left), "-%s", remaining);
       format_time(s_duration_seconds, right, sizeof(right));
-    }
-    draw_text(ctx, left, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), ui_primary,
-              GRect(pad_x, 158, inner_w / 2, 18), GTextAlignmentLeft);
-    draw_text(ctx, right, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), ui_primary,
-              GRect(pad_x + inner_w / 2, 158, inner_w - inner_w / 2, 18), GTextAlignmentRight);
-    play_button_y = 200;
-  } else {
-    // Battery-saver layout: no progress bar (and no per-second redraws to
-    // update it), just the track info and the play/pause indicator.
-    play_button_y = 186;
-  }
-
-  int controls_y = s_show_progress ? 200 : 186;
-  GPoint shuffle_center = GPoint(pad_x + 12, controls_y);
-  GPoint repeat_center = GPoint(pad_x + inner_w - 12, controls_y);
-  GColor inactive_control = on_art ? art_ui_color : GColorLightGray;
-  draw_shuffle_icon(ctx, shuffle_center, s_shuffle_enabled ? accent_color() : inactive_control);
-  draw_repeat_icon(ctx, repeat_center, s_loop_enabled ? accent_color() : inactive_control);
-  if (s_loop_enabled) {
-    graphics_context_set_fill_color(ctx, accent_color());
-    if (s_loop_mode == LoopModeAll) {
-      graphics_fill_rect(ctx, GRect(repeat_center.x + 3, repeat_center.y + 2, 13, 9),
-                         3, GCornersAll);
-      draw_text(ctx, "A", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GColorWhite,
-                GRect(repeat_center.x + 4, repeat_center.y - 2, 10, 12), GTextAlignmentCenter);
     } else {
-      graphics_fill_circle(ctx, GPoint(repeat_center.x + 8, repeat_center.y + 7), 5);
-      draw_text(ctx, "1", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GColorWhite,
-                GRect(repeat_center.x + 3, repeat_center.y - 2, 10, 12), GTextAlignmentCenter);
+      // Length unknown (livestreams, and every track before the first position
+      // event): counting up is the only honest thing to show.
+      format_time(s_elapsed_seconds, left, sizeof(left));
+      right[0] = '\0';
     }
-  }
-  draw_play_button(ctx, GPoint(pad_x + inner_w / 2, play_button_y), 18, paused);
-
-  // Battery-saver layout has no progress bar to host the volume readout, so show a
-  // transient centered volume popup when the volume changes.
-  if (!s_show_progress && s_show_volume) {
-    const int pw = 164, ph = 46;
-    GRect card = GRect(100 - pw / 2, 100, pw, ph);
-    graphics_context_set_fill_color(ctx, GColorBlack);
-    graphics_fill_rect(ctx, card, 8, GCornersAll);
-    graphics_context_set_stroke_color(ctx, GColorWhite);
-    graphics_context_set_stroke_width(ctx, 2);
-    graphics_draw_round_rect(ctx, card, 8);
-    char pct[8];
-    snprintf(pct, sizeof pct, "%d%%", displayed_volume());
-    draw_text(ctx, "VOLUME", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GColorWhite,
-              GRect(card.origin.x + 10, card.origin.y + 5, pw - 20, 16), GTextAlignmentLeft);
-    draw_text(ctx, pct, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GColorWhite,
-              GRect(card.origin.x + 10, card.origin.y + 5, pw - 20, 16), GTextAlignmentRight);
-    int bx = card.origin.x + 10, by = card.origin.y + 28, barw = pw - 20;
-    graphics_context_set_fill_color(ctx, GColorDarkGray);
-    graphics_fill_rect(ctx, GRect(bx, by, barw, 6), 3, GCornersAll);
-    graphics_context_set_fill_color(ctx, accent_color());
-    graphics_fill_rect(ctx, GRect(bx, by, barw * displayed_volume() / 100, 6), 3, GCornersAll);
+    draw_time_chip(ctx, l.remaining, left);
+    draw_time_chip(ctx, l.total, right);
   }
 
+  // The accent card. Everything from here down is inside it, in on-accent ink.
+  graphics_context_set_fill_color(ctx, accent_color());
+  graphics_fill_rect(ctx, l.card, 6, GCornersAll);
+
+  draw_text(ctx, result->title, ui_font(FONT_KEY_GOTHIC_24_BOLD), ink,
+            l.title, GTextAlignmentLeft);
+  draw_text(ctx, result->artist, ui_font(FONT_KEY_GOTHIC_18), ink,
+            l.artist, GTextAlignmentLeft);
+
+  // Shuffle and loop, right-hand side of the card.
+  draw_card_toggle(ctx, l.shuffle, s_shuffle_enabled, draw_shuffle_icon);
+  draw_card_toggle(ctx, l.loop, s_loop_enabled, draw_repeat_icon);
+  if (s_loop_enabled) {
+    // Which loop mode, as a badge on the toggle's upper-right shoulder. Below it
+    // instead would hang off the card's bottom edge, which the card no longer has the
+    // room to absorb.
+    const GPoint badge = GPoint(l.loop.x + 9, l.loop.y - 10);
+    graphics_context_set_fill_color(ctx, ink);
+    graphics_fill_circle(ctx, badge, 5);
+    draw_text(ctx, s_loop_mode == LoopModeAll ? "A" : "1",
+              ui_font(FONT_KEY_GOTHIC_14_BOLD), accent_color(),
+              GRect(badge.x - 5, badge.y - 9, 10, 14), GTextAlignmentCenter);
+  }
+
+  // Volume and every confirmation were drawn here, as cards over the middle of the
+  // screen. They are on the artwork now - see draw_art_answer() - so nothing is left
+  // to stack on top of the layout but the More popup.
   if (s_action_bar_visible) draw_action_bar(ctx, paused);
-  if (s_np_more_open) {
-    // The More popup shows toggle state directly, so skip the transient feedback flash.
-    draw_np_more(ctx);
-  } else {
-    draw_feedback_overlay(ctx);
-  }
+  if (s_np_more_open) draw_np_more(ctx);
 }
 
 static void draw_song(GContext *ctx, AppScreen state) {
@@ -3444,21 +4055,21 @@ static void draw_song(GContext *ctx, AppScreen state) {
 }
 
 static void draw_error(GContext *ctx) {
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, ui_bg());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 228), 0, GCornerNone);
   // Chromeless, but failure keeps its accent as a thin eyebrow band so an error can
   // never be mistaken for an empty list.
   graphics_context_set_fill_color(ctx, accent_color());
   graphics_fill_rect(ctx, GRect(0, 0, 200, 40), 0, GCornerNone);
-  draw_text(ctx, "SOMETHING WENT WRONG", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GColorWhite, GRect(18, 18, 164, 18), GTextAlignmentLeft);
-  graphics_context_set_text_color(ctx, GColorBlack);
-  graphics_draw_text(ctx, s_status, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+  draw_text(ctx, "SOMETHING WENT WRONG", ui_font(FONT_KEY_GOTHIC_14_BOLD),
+            on_accent_color(), GRect(18, 18, 164, 18), GTextAlignmentLeft);
+  graphics_context_set_text_color(ctx, ui_fg());
+  graphics_draw_text(ctx, s_status, ui_font(FONT_KEY_GOTHIC_18_BOLD),
                      GRect(18, 92, 164, 44), GTextOverflowModeWordWrap,
                      GTextAlignmentCenter, NULL);
   draw_text(ctx, s_result_count > 0 ? "SELECT retry    BACK close"
                                     : "SELECT search    BACK close",
-            fonts_get_system_font(FONT_KEY_GOTHIC_14), GColorBlack,
+            ui_font(FONT_KEY_GOTHIC_14), ui_fg(),
             GRect(8, 202, 184, 18), GTextAlignmentCenter);
 }
 
@@ -3957,18 +4568,16 @@ static void np_hold_timer_cb(void *context) {
   layer_mark_dirty(s_canvas);
 }
 
-// True when (x, y) is within radius r of center (cx, cy) - a generous circular
-// hit-test for the on-screen now-playing controls.
-static bool np_hit(int x, int y, int cx, int cy, int r) {
-  int dx = x - cx, dy = y - cy;
-  return dx * dx + dy * dy <= r * r;
-}
-
 // Handles touch on the now-playing screen. A stationary hold toggles artwork-only
-// (via np_hold_timer_cb); a short tap hits the on-screen controls (play/pause,
-// shuffle, loop, output). Swipes deliberately do nothing here - they used to map to
-// previous/next and volume, but the now-playing screen is easy to brush against and
-// those gestures fired far too readily. Track skips and volume are buttons-only.
+// (via np_hold_timer_cb), and that is the whole of it: taps hit nothing.
+//
+// This screen has had three generations of touch controls and kept none of them.
+// Swipes went first - they mapped to previous/next and volume, and the now-playing
+// screen is easy to brush against, so they fired far too readily. Tap targets went
+// the same way: play/pause, shuffle, loop and output all had hit-tests that had to be
+// kept in step with wherever the layout put their glyphs this week, and every one of
+// them was reachable from a button or the More popup anyway. What is left is the one
+// gesture with no button equivalent. Everything else is buttons-only, on purpose.
 static void np_touch_handle(const TouchEvent *event) {
   switch (event->type) {
     case TouchEvent_Touchdown:
@@ -3988,51 +4597,16 @@ static void np_touch_handle(const TouchEvent *event) {
       }
       break;
     }
-    case TouchEvent_Liftoff: {
+    case TouchEvent_Liftoff:
+      // Nothing to do but tidy up: the hold timer either already fired and toggled
+      // artwork-only, or this was a tap, and taps do nothing here.
       if (s_np_hold_timer) {
         app_timer_cancel(s_np_hold_timer);
         s_np_hold_timer = NULL;
       }
-      bool was_touching = s_np_touching;
-      bool hold_fired = s_np_hold_fired;
       s_np_touching = false;
       s_np_hold_fired = false;
-      // The hold gesture already acted; ignore its liftoff. Buttons drive the More popup.
-      if (!was_touching || hold_fired || s_np_more_open) break;
-      int16_t dx = event->x - s_np_touch_x;
-      int16_t dy = event->y - s_np_touch_y;
-      // Anything that travelled is a swipe, and swipes are ignored on this screen.
-      if ((int32_t) dx * dx + (int32_t) dy * dy >= 24 * 24) break;
-      // Tap. A tap in artwork-only mode just restores the UI. Otherwise hit-test the
-      // controls using the same geometry as draw_modern_song (action bar gone, so the
-      // content spans the full 180px width).
-      if (s_artwork_only) {
-        s_artwork_only = false;
-        layer_mark_dirty(s_canvas);
-        break;
-      }
-      // Geometry must be derived exactly as draw_modern_song derives it. It used to
-      // hardcode the action-bar-hidden width, which put the repeat hit-test at x=160
-      // while the icon was actually drawn at x=134 whenever the action bar was
-      // showing - 26px away from a 22px target, so the tap always missed and loop
-      // could not be toggled by touch. Shuffle sits at a fixed offset from the left
-      // and play/pause is within its larger radius, which is why only repeat broke.
-      const int pad_x = 18;
-      const int content_width = s_action_bar_visible ? 154 : 180;
-      const int inner_w = content_width - pad_x - 8;
-      const int cy = s_show_progress ? 200 : 186;  // controls row
-      if (np_hit(event->x, event->y, pad_x + inner_w / 2, cy, 28)) {
-        np_toggle_play_pause();
-      } else if (np_hit(event->x, event->y, pad_x + 12, cy, 22)) {
-        np_toggle_shuffle();
-      } else if (np_hit(event->x, event->y, pad_x + inner_w - 12, cy, 22)) {
-        np_cycle_loop();
-      } else if (event->y < 42) {
-        np_toggle_output();   // tapping the source row switches phone/watch
-      }
-      layer_mark_dirty(s_canvas);
       break;
-    }
   }
 }
 
@@ -4173,6 +4747,8 @@ static void play_selected(void) {
   }
   s_now_playing = s_results[s_selected_result];
   s_has_now_playing = true;
+  // So Home leads with Now Playing when the user backs out to it.
+  s_home_selection = 0;
   s_played_samples = 0;
   s_elapsed_seconds = 0;
   s_duration_seconds = 0;
@@ -4351,6 +4927,10 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
     strncpy(s_cover_art_video_id, incoming_id, TEXT_LENGTH - 1);
     s_cover_art_video_id[TEXT_LENGTH - 1] = '\0';
     arm_cover_art_timeout();
+    // Show the placeholder the moment the transfer opens. Without this the screen only
+    // learns art is coming when something else happens to repaint it, which on Home is
+    // nothing at all.
+    layer_mark_dirty(s_canvas);
   } else if (command_tuple && command == EventCoverArtChunk) {
     if (!s_cover_art_receiving) return;
     // A transfer opened for a named track is owned by that track until it finishes or
@@ -4385,6 +4965,10 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
     s_cover_art_received_bytes += (int) data->length;
     s_cover_art_expected_sequence++;
     arm_cover_art_timeout();
+    // Repaint as the bytes land, or the placeholder's progress bar is drawn once and
+    // then sits still for the whole transfer. Only completion used to mark the canvas,
+    // which Now Playing masked with its once-a-second redraw and Home did not.
+    layer_mark_dirty(s_canvas);
     if (s_cover_art_received_bytes >= s_cover_art_expected_bytes) {
       cancel_cover_art_timeout();
       s_cover_art_receiving = false;
@@ -4480,10 +5064,11 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
     if (theme) {
       int value = theme->value->int32;
       if (value < ThemeTeal) value = ThemeTeal;
-      if (value > ThemeMono) value = ThemeMono;
+      if (value > ThemeArcade) value = ThemeArcade;
+      if (!theme_is_available((AppTheme) value)) value = ThemeDefault;
       s_theme = (AppTheme) value;
       persist_write_int(THEME_KEY, s_theme);
-      menu_layer_set_highlight_colors(s_native_menu_layer, accent_color(), GColorWhite);
+      menu_layer_set_highlight_colors(s_native_menu_layer, accent_color(), on_accent_color());
       menu_layer_reload_data(s_native_menu_layer);
     }
     if (loop_mode) {
@@ -4506,6 +5091,9 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
     Tuple *title = dict_find(iterator, MESSAGE_KEY_TITLE);
     Tuple *artist = dict_find(iterator, MESSAGE_KEY_ARTIST);
     if (video && title && artist) {
+      // A track appearing while Home is showing selects the dock's Now Playing
+      // entry - it leads the dock, and Home opens on "what is playing".
+      if (!s_has_now_playing && s_screen == ScreenHome) s_home_selection = 0;
       s_has_now_playing = true;
       copy_tuple_text(s_now_playing.video_id, TEXT_LENGTH, video);
       copy_tuple_text(s_now_playing.title, TEXT_LENGTH, title);
@@ -4702,20 +5290,18 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
     persist_write_int(CACHE_SIZE_MB_KEY, s_cache_size_mb);
     config_changed = true;
   }
-  if (config_cover_art_bg) {
-    s_cover_art_background = config_cover_art_bg->value->int32 != 0;
-    APP_LOG(APP_LOG_LEVEL_INFO, "[ClaySync] CONFIG_COVER_ART_BG=%d", s_cover_art_background ? 1 : 0);
-    persist_write_bool(COVER_ART_BG_KEY, s_cover_art_background);
-    config_changed = true;
-  }
+  // Cover art background is no longer a setting - the artwork is the Now Playing
+  // screen's whole upper half - so an older Clay config still carrying the key is
+  // read and ignored rather than allowed to switch it back off.
   if (config_theme) {
     int value = config_theme->value->int32;
     if (value < ThemeTeal) value = ThemeTeal;
-    if (value > ThemeMono) value = ThemeMono;
+    if (value > ThemeArcade) value = ThemeArcade;
+    if (!theme_is_available((AppTheme) value)) value = ThemeDefault;
     s_theme = (AppTheme) value;
     APP_LOG(APP_LOG_LEVEL_INFO, "[ClaySync] THEME=%d", (int) s_theme);
     persist_write_int(THEME_KEY, s_theme);
-    menu_layer_set_highlight_colors(s_native_menu_layer, accent_color(), GColorWhite);
+    menu_layer_set_highlight_colors(s_native_menu_layer, accent_color(), on_accent_color());
     menu_layer_reload_data(s_native_menu_layer);
     config_changed = true;
   }
@@ -4759,14 +5345,16 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
 // and the "More" popup so each control has a single implementation.
 // ---------------------------------------------------------------------------
 
+// No confirmation popup here, unlike every other action: the artwork itself answers
+// the press. Pausing veils the cover and puts a resume glyph in the middle of it, and
+// resuming clears both - a full-screen change that a 72px card can only repeat, and
+// which the card was landing on top of.
 static void np_toggle_play_pause(void) {
   if (s_screen == ScreenPlaying) {
     send_generation_command(CommandPause, NULL, 0);
-    show_feedback(FeedbackPause);
   } else if (s_screen == ScreenPaused) {
     s_stream_generation++;
     send_generation_command(CommandResume, NULL, 0);
-    show_feedback(FeedbackPlay);
   }
 }
 
@@ -4922,25 +5510,31 @@ static void select_click(ClickRecognizerRef recognizer, void *context) {
   } else if (s_screen == ScreenHome && s_bespoke_ui) {
     // The dock Home is a menu, so SELECT opens the highlighted destination using the
     // same actions ScreenMenu's own SELECT runs (MENU_ITEMS is shared between the two).
-    const int hero_rows = home_hero_selectable() ? 1 : 0;
-    int row = s_home_selection - hero_rows;
-    // A stale selection can outlive the track that made the hero selectable.
-    if (row < 0 || row >= (int) ARRAY_LENGTH(MENU_ITEMS)) row = 0;
-    if (hero_rows && s_home_selection == 0) {
-      // The hero opens what it is describing. nav_push so Back returns to Home.
+    // A stale selection can outlive the track that added the Now Playing entry.
+    int row = s_home_selection;
+    if (row < 0 || row >= home_dock_count()) row = 0;
+    if (home_dock_is_now_playing(row)) {
+      // nav_push so Back returns to Home.
       nav_push(s_playback_active ? ScreenPlaying : ScreenPaused);
       if (s_playback_active) start_progress_timer();
-    } else if (row == 0) {
-      begin_configured_search();
-    } else if (row == 1) {
-      s_menu_selection = 0;
-      nav_push(ScreenLibrary);
-    } else if (row == 2) {
-      s_menu_selection = 0;
-      nav_push(ScreenSettings);
     } else {
-      s_about_select_count = 0;
-      nav_push(ScreenAbout);
+      switch (home_dock_menu_index(row)) {
+        case 0:
+          begin_configured_search();
+          break;
+        case 1:
+          s_menu_selection = 0;
+          nav_push(ScreenLibrary);
+          break;
+        case 2:
+          s_menu_selection = 0;
+          nav_push(ScreenSettings);
+          break;
+        default:
+          s_about_select_count = 0;
+          nav_push(ScreenAbout);
+          break;
+      }
     }
   } else if (s_screen == ScreenHome || (s_screen == ScreenResults && s_result_count == 0)) {
     begin_configured_search();
@@ -5050,20 +5644,25 @@ static void select_click(ClickRecognizerRef recognizer, void *context) {
       s_show_progress = !s_show_progress;
       persist_write_bool(SHOW_PROGRESS_KEY, s_show_progress);
     } else if (s_menu_selection == 5) {
+      s_back_stops = !s_back_stops;
+      persist_write_bool(BACK_STOPS_KEY, s_back_stops);
+    } else if (s_menu_selection == 6) {
       s_menu_selection = 0;
       nav_push(ScreenAdvanced);
       return;
     }
     layer_mark_dirty(s_canvas);
   } else if (s_screen == ScreenAdvanced) {
-    if (s_menu_selection == 0) {
+    // Rows are filtered per UI, so the highlighted row is not the item's index.
+    const int item = advanced_item_id(s_menu_selection);
+    if (item == 0) {
 #ifdef PBL_PLATFORM_EMERY
       s_keyboard_pt2 = !s_keyboard_pt2;
       persist_write_bool(KEYBOARD_STYLE_KEY, s_keyboard_pt2);
 #else
       vibes_short_pulse();
 #endif
-    } else if (s_menu_selection == 1) {
+    } else if (item == 1) {
       s_bespoke_ui = !s_bespoke_ui;
       persist_write_bool(BESPOKE_UI_KEY, s_bespoke_ui);
       s_home_selection = 0;
@@ -5076,59 +5675,89 @@ static void select_click(ClickRecognizerRef recognizer, void *context) {
         }
         s_home_background_variant = -1;
       } else {
+        // Arcade has no stock counterpart (see theme_is_available), so leaving the
+        // bespoke UI takes the theme back to the default rather than stranding cyan
+        // text on the system menu's white background.
+        if (s_theme == ThemeArcade) {
+          s_theme = ThemeDefault;
+          persist_write_int(THEME_KEY, s_theme);
+          send_settings_sync();
+        }
         s_home_bg_failed_variant = -1;
         ensure_home_background();
+      }
+      // Toggling the UI also adds or removes the two stock-Home rows below this one,
+      // so the highlight cannot be left past the end of the shortened list.
+      if (s_menu_selection >= advanced_item_count()) {
+        s_menu_selection = advanced_item_count() - 1;
       }
       // This screen is itself a list, so swap it between the MenuLayer and the canvas
       // right now rather than leaving the old renderer on screen until the next nav.
       sync_native_menu(false);
-    } else if (s_menu_selection == 2) {
-      s_theme = s_theme == ThemeDefault ? ThemeTeal :
-                s_theme == ThemeTeal ? ThemePurple :
-                s_theme == ThemePurple ? ThemeSunset :
-                s_theme == ThemeSunset ? ThemeMono : ThemeDefault;
+    } else if (item == 2) {
+      do {
+        s_theme = s_theme == ThemeDefault ? ThemeTeal :
+                  s_theme == ThemeTeal ? ThemePurple :
+                  s_theme == ThemePurple ? ThemeSunset :
+                  s_theme == ThemeSunset ? ThemeMono :
+                  s_theme == ThemeMono ? ThemeArcade : ThemeDefault;
+      } while (!theme_is_available(s_theme));
       persist_write_int(THEME_KEY, s_theme);
+      // Sophie mode only applies under Mono (see ui_font), so the faces are only worth
+      // holding there. The preference itself is left alone, so coming back to Mono
+      // brings it back with it.
+      if (s_theme == ThemeMono && s_sophie_mode) {
+        sophie_fonts_load();
+      } else if (s_theme != ThemeMono) {
+        sophie_fonts_unload();
+      }
       send_settings_sync();
-      menu_layer_set_highlight_colors(s_native_menu_layer, accent_color(), GColorWhite);
+      menu_layer_set_highlight_colors(s_native_menu_layer, accent_color(), on_accent_color());
       menu_layer_reload_data(s_native_menu_layer);
       // The Mono theme swaps to dedicated black & white Home art; swap it now so
       // Home is ready before it is shown, otherwise the first Home paint would
       // flash the previous background while loading.
       s_home_bg_failed_variant = -1;
       if (!s_bespoke_ui) ensure_home_background();
-    } else if (s_menu_selection == 3) {
+    } else if (item == 3) {
+      s_sophie_mode = !s_sophie_mode;
+      persist_write_bool(SOPHIE_MODE_KEY, s_sophie_mode);
+      // Load on the way on, free on the way off: four rasterized faces is real heap,
+      // and this is the only thing that decides whether any of it is needed.
+      if (s_sophie_mode) {
+        sophie_fonts_load();
+      } else {
+        sophie_fonts_unload();
+      }
+    } else if (item == 4) {
       s_alt_home = !s_alt_home;
       persist_write_bool(ALT_HOME_KEY, s_alt_home);
       // Swap the background now so Home is ready before it is shown, otherwise the
       // first Home paint would flash the empty (white) background while loading.
       s_home_bg_failed_variant = -1;
       if (!s_bespoke_ui) ensure_home_background();
-    } else if (s_menu_selection == 4) {
+    } else if (item == 5) {
       s_show_home_quotes = !s_show_home_quotes;
       persist_write_bool(SHOW_HOME_QUOTES_KEY, s_show_home_quotes);
-    } else if (s_menu_selection == 5) {
-      s_cover_art_background = !s_cover_art_background;
-      persist_write_bool(COVER_ART_BG_KEY, s_cover_art_background);
-      send_settings_sync();
-    } else if (s_menu_selection == 6) {
+    } else if (item == 6) {
       s_history_limit += HISTORY_LIMIT_STEP;
       if (s_history_limit > HISTORY_LIMIT_MAX) s_history_limit = HISTORY_LIMIT_MIN;
       persist_write_int(HISTORY_LIMIT_KEY, s_history_limit);
-    } else if (s_menu_selection == 7) {
+    } else if (item == 7) {
       s_search_limit = s_search_limit == 5 ? 10 : 5;
       persist_write_int(SEARCH_LIMIT_KEY, s_search_limit);
-    } else if (s_menu_selection == 8) {
+    } else if (item == 8) {
       s_extra_library = !s_extra_library;
       persist_write_bool(EXTRA_LIBRARY_KEY, s_extra_library);
-    } else if (s_menu_selection == 9) {
+    } else if (item == 9) {
       s_watch_audio_quality = !s_watch_audio_quality;
       persist_write_bool(WATCH_AUDIO_QUALITY_KEY, s_watch_audio_quality);
       send_settings_sync();
-    } else if (s_menu_selection == 10) {
+    } else if (item == 10) {
       s_phone_audio_quality = !s_phone_audio_quality;
       persist_write_bool(PHONE_AUDIO_QUALITY_KEY, s_phone_audio_quality);
       send_settings_sync();
-    } else {
+    } else if (item == 11) {
       s_cache_radio = !s_cache_radio;
       persist_write_bool(CACHE_RADIO_KEY, s_cache_radio);
       send_settings_sync();
@@ -5192,7 +5821,7 @@ static void up_click(ClickRecognizerRef recognizer, void *context) {
     }
   } else if (s_screen == ScreenHome) {
     if (s_bespoke_ui) {
-      int count = (int) ARRAY_LENGTH(MENU_ITEMS) + (home_hero_selectable() ? 1 : 0);
+      int count = home_dock_count();
       s_home_selection = (s_home_selection + count - 1) % count;
       layer_mark_dirty(s_canvas);
     } else {
@@ -5249,8 +5878,7 @@ static void down_click(ClickRecognizerRef recognizer, void *context) {
     }
   } else if (s_screen == ScreenHome) {
     if (s_bespoke_ui) {
-      s_home_selection = (s_home_selection + 1) %
-                         ((int) ARRAY_LENGTH(MENU_ITEMS) + (home_hero_selectable() ? 1 : 0));
+      s_home_selection = (s_home_selection + 1) % home_dock_count();
       layer_mark_dirty(s_canvas);
     } else {
       s_menu_selection = 0;
@@ -5315,9 +5943,13 @@ static void back_click(ClickRecognizerRef recognizer, void *context) {
     return;
   }
 
-  // Leaving live playback/buffering: tear down the stream, then retrace history.
-  if (s_screen == ScreenPlaying || s_screen == ScreenPaused ||
-      s_screen == ScreenBuffering) {
+  // Leaving live playback/buffering. With "Back stops" on this tears the stream down,
+  // which is what the app always did. With it off, Back is pure navigation: the stream,
+  // the generation counter and the loaded track are all left alone, so playback carries
+  // on and Home still has a hero to show. Every other way out of playback (Stop from the
+  // More popup, a new search) is unaffected either way.
+  if ((s_screen == ScreenPlaying || s_screen == ScreenPaused ||
+       s_screen == ScreenBuffering) && s_back_stops) {
     send_command(CommandStop, NULL, 0);
     s_stream_generation++;
     stop_audio();
@@ -5428,7 +6060,8 @@ static void init(void) {
   if (persist_exists(THEME_KEY)) {
     int theme = persist_read_int(THEME_KEY);
     if (theme == ThemeDefault || theme == ThemePurple ||
-        theme == ThemeSunset || theme == ThemeTeal || theme == ThemeMono) {
+        theme == ThemeSunset || theme == ThemeTeal || theme == ThemeMono ||
+        theme == ThemeArcade) {
       s_theme = theme;
     }
   }
@@ -5473,6 +6106,15 @@ static void init(void) {
   if (persist_exists(KEYBOARD_STYLE_KEY)) {
     s_keyboard_pt2 = persist_read_bool(KEYBOARD_STYLE_KEY);
   }
+  if (persist_exists(BACK_STOPS_KEY)) {
+    s_back_stops = persist_read_bool(BACK_STOPS_KEY);
+  }
+  if (persist_exists(SOPHIE_MODE_KEY)) {
+    s_sophie_mode = persist_read_bool(SOPHIE_MODE_KEY);
+    // The faces have to exist before the first paint, or the whole app draws one
+    // frame in the system font and then snaps.
+    if (s_sophie_mode) sophie_fonts_load();
+  }
   if (persist_exists(SHOW_PROGRESS_KEY)) {
     s_show_progress = persist_read_bool(SHOW_PROGRESS_KEY);
   }
@@ -5487,9 +6129,9 @@ static void init(void) {
     if (size_mb < 100) size_mb = 100;
     s_cache_size_mb = (uint16_t) size_mb;
   }
-  if (persist_exists(COVER_ART_BG_KEY)) {
-    s_cover_art_background = persist_read_bool(COVER_ART_BG_KEY);
-  }
+  // COVER_ART_BG_KEY is deliberately not read back. Anyone who had turned cover art
+  // off before it stopped being a setting would otherwise be stuck with an empty
+  // upper half and no row left in Advanced to turn it back on.
   if (persist_exists(WATCH_AUDIO_QUALITY_KEY)) {
     s_watch_audio_quality = persist_read_bool(WATCH_AUDIO_QUALITY_KEY);
   }
@@ -5505,6 +6147,10 @@ static void init(void) {
   if (persist_exists(ADVANCED_UNLOCKED_KEY)) {
     s_advanced_unlocked = persist_read_bool(ADVANCED_UNLOCKED_KEY);
   }
+  // The theme was restored above, before the UI flag it depends on; settle it now that
+  // both are known, so a build that ever wrote the pair inconsistently still opens on
+  // a theme this UI can actually paint.
+  if (!theme_is_available(s_theme)) s_theme = ThemeDefault;
   // LEGACY_THEME_KEY is not loaded - the legacy mascot theme it fed is disabled,
   // see s_legacy_theme's comment.
   clear_cover_art();
@@ -5550,7 +6196,7 @@ static void init(void) {
   layer_add_child(window_get_root_layer(s_overlay_window), s_overlay_canvas);
   window_set_background_color(s_overlay_window, GColorBlack);
   s_native_menu_layer = menu_layer_create(GRect(0, 0, 200, 228));
-  menu_layer_set_highlight_colors(s_native_menu_layer, accent_color(), GColorWhite);
+  menu_layer_set_highlight_colors(s_native_menu_layer, accent_color(), on_accent_color());
   menu_layer_set_callbacks(s_native_menu_layer, NULL, (MenuLayerCallbacks) {
       .get_num_rows = native_menu_get_num_rows_callback,
       .get_cell_height = native_menu_get_cell_height_callback,
@@ -5576,6 +6222,7 @@ static void init(void) {
 }
 
 static void deinit(void) {
+  sophie_fonts_unload();
   tick_timer_service_unsubscribe();
 #ifdef PBL_PLATFORM_EMERY
   if (s_touch_subscribed) touch_service_unsubscribe();

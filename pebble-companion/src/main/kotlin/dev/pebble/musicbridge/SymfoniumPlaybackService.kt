@@ -85,7 +85,7 @@ class SymfoniumPlaybackService : Service() {
         Log.i(TAG, "Symfonium bridge starting")
         transport = PebbleAudioTransport(applicationContext, scope, Protocol.symfoniumAppUuid)
         getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE).run {
-            watchTheme = getInt(KEY_THEME, ThemeDefault).coerceIn(ThemeTeal, ThemeMono)
+            watchTheme = getInt(KEY_THEME, ThemeDefault).coerceIn(ThemeTeal, ThemeArcade)
             // Defaults on here (unlike PebblePlaybackService's off-by-default): that
             // default existed to protect BLE bandwidth for the watch-speaker audio
             // stream, which this backend never runs (see maybeSendCoverArt's kdoc).
@@ -262,7 +262,7 @@ class SymfoniumPlaybackService : Service() {
                 if (themeConfig != null || coverArtConfig != null) {
                     getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE).edit().apply {
                         themeConfig?.let {
-                            watchTheme = it.coerceIn(ThemeTeal, ThemeMono)
+                            watchTheme = it.coerceIn(ThemeTeal, ThemeArcade)
                             putInt(KEY_THEME, watchTheme)
                         }
                         coverArtConfig?.let {
@@ -590,5 +590,6 @@ class SymfoniumPlaybackService : Service() {
         private const val ThemeTeal = 0
         private const val ThemeDefault = 3
         private const val ThemeMono = 4
+        private const val ThemeArcade = 5
     }
 }

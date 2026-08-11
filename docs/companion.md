@@ -57,8 +57,37 @@ A full player interface, vendored from **PixelPlayer** (MIT, pinned at the last 
 - **Now Playing** — the PixelPlayer expressive player sheet (squircle artwork, palette-driven colors, animated controls).
 - **Cache** — cache usage, per-track delete, clear all.
 - **Info** — about/links screen.
+- **Appearance** — the phone's theme and its light/dark preference.
 
-Theming follows the watch's accent (`WatchAccent`: Teal, Purple, Sunset, Default, plus mono) with a light/dark **theme mode** stored in a dedicated UI-prefs store, kept deliberately separate from the playback prefs the watch syncs.
+## Appearance
+
+The phone and the watch pick themes independently. Both settings live in a dedicated
+UI-prefs store, deliberately separate from the playback prefs the watch syncs: neither
+is ever sent to the watch, so changing the phone's look cannot disturb the watch's.
+
+The choices are the *watch's* themes. `WatchAccent.PALETTES` mirrors the watchapp's
+`bespoke_colors()` table — ground, ink, accent and on-accent — so each row on the
+Appearance screen shows the colors that theme actually paints on the watch, and the app
+wears them literally. Picking "Arcade" on the phone means wearing the watch's Arcade, not a
+separate phone palette of the same name.
+
+Seeding Material from the watch accent is not enough on its own, and this is worth
+knowing before touching `DreamwaveAccent.kt`. The generator runs `SchemeTonalSpot`, where
+every `on*` role comes from Material's **neutral** palette at chroma 6: the seed's hue
+survives only as an invisible tint and tone decides the rest, so the ink lands on white in
+dark mode whatever color you seed with. That is Material working as intended — the seed
+moves `primary` and the containers, the text roles stay neutral — and it is why the phone
+read so much greyer than the watch. So the generated scheme is kept for its coherence
+(every exotic role the vendored player reaches for stays populated and consistent) and
+`ColorScheme.wearing()` overwrites the roles that decide what you see: ground, ink, the
+surface container ramp, the accent pairs and the outlines.
+
+The watch has one appearance; the phone has two. Dark wears the palette as-is; light
+inverts it into a pale wash of the same hue with deep saturated ink, so light mode is
+still recognisably that theme rather than the same grey as every other one.
+
+**Match the watch** is the default and keeps the old behavior — the phone follows
+whatever theme the watch reports.
 
 ## Permissions
 

@@ -51,9 +51,25 @@ Audio can be routed two ways, switchable from either device:
 - Cover-art display, progress bar, queue view
 - Voice search by default; on-watch grid keyboard unlockable via **About → SELECT ×7 on the version row**
 - Independent watch/phone volume, per-route audio quality, shuffle & loop sync, favorites & playlists
-- Bespoke or stock UI, "Dreamwave Teal" theme, home styles, home quotes
+- Bespoke or stock UI, six themes, home styles, home quotes
 
 **→ [In-depth watchapp docs](docs/watchapp.md)**
+
+#### Defaults
+
+A fresh install starts here. Everything is changeable in **Settings**, or **Settings → Advanced** once unlocked; nothing below is a one-way door.
+
+| Setting | Default | Why |
+|---|---|---|
+| Bespoke UI | **On** | The language the app is designed in. The stock look is the fallback, not the baseline. |
+| Keyboard | **Grid** | The 3×3 swipe keyboard suits the Time 2's touchscreen; Classic is there for muscle memory. |
+| Progress bar | **On** | Now Playing's rail and its remaining/total chips both hang off this. Turning it off is the battery-saver layout — no rail, no times, no per-second redraw. |
+| Back stops | **Off** | Backing out of Now Playing leaves the track playing, so Back is pure navigation and Home keeps its card. On restores the old teardown-on-exit behaviour. |
+| History | **20 songs** | The maximum. Recently Played is cheap and the shorter list ran out quickly. |
+| Results | **10** | Full page of search results rather than half of one. |
+| Cache radio | **Off** | Radio is endless and effectively unrepeatable, so caching it spends the budget on the tracks you are least likely to hear again. |
+
+Cover art is no longer a setting — it is always on. It was a toggle until 0.5.0, when the artwork became Now Playing's whole upper half and Home's card face; switching it off left both screens built around a hole.
 
 ### 📱 Companion
 - Full player UI vendored from PixelPlayer — Home, Library, Search, Cache and Now Playing screens

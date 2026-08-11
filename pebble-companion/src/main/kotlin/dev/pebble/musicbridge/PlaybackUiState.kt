@@ -62,7 +62,7 @@ data class SettingsUiState(
         const val CACHE_SIZE_STEP_MB = 50
 
         /** Labels for the watch's accent themes, indexed by the persisted theme int. */
-        val THEME_NAMES = listOf("Teal", "Purple", "Sunset", "Default", "Mono")
+        val THEME_NAMES = listOf("Teal", "Purple", "Sunset", "Default", "Mono", "Arcade")
     }
 }
 

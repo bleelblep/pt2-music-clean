@@ -49,6 +49,19 @@ class DreamwaveViewModel(application: Application) : AndroidViewModel(applicatio
         _themeMode.value = mode
     }
 
+    /**
+     * The phone's chosen theme, or [UiPrefs.FOLLOW_WATCH]. Phone-only, like [themeMode]:
+     * it never reaches the watch, so changing it here cannot disturb what the watch is
+     * wearing.
+     */
+    private val _appTheme = MutableStateFlow(UiPrefs.appTheme(application))
+    val appTheme: StateFlow<Int> = _appTheme.asStateFlow()
+
+    fun setAppTheme(theme: Int) {
+        UiPrefs.setAppTheme(getApplication(), theme)
+        _appTheme.value = theme
+    }
+
     private val _uiState = MutableStateFlow(PlaybackUiState())
     val uiState: StateFlow<PlaybackUiState> = _uiState.asStateFlow()
 

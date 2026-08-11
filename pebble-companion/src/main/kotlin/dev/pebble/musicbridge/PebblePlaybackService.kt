@@ -246,7 +246,7 @@ class PebblePlaybackService : MediaSessionService() {
             cacheSizeMb = getInt(KEY_CACHE_SIZE_MB, DEFAULT_CACHE_SIZE_MB).coerceIn(MIN_CACHE_SIZE_MB, MAX_CACHE_SIZE_MB)
             loopMode = getInt(KEY_LOOP_MODE, LoopModeOff).coerceIn(LoopModeOff, LoopModeAll)
             coverArtBackground = getBoolean(KEY_COVER_ART_BG, true)
-            watchTheme = getInt(KEY_THEME, ThemeDefault).coerceIn(ThemeTeal, ThemeMono)
+            watchTheme = getInt(KEY_THEME, ThemeDefault).coerceIn(ThemeTeal, ThemeArcade)
             watchAudioQuality = getBoolean(KEY_WATCH_AUDIO_QUALITY, true)
             phoneAudioQuality = getBoolean(KEY_PHONE_AUDIO_QUALITY, true)
             cacheRadioEnabled = getBoolean(KEY_CACHE_RADIO, true)
@@ -2499,6 +2499,20 @@ class PebblePlaybackService : MediaSessionService() {
                 player.playbackState != Player.STATE_IDLE &&
                 player.playbackState != Player.STATE_ENDED
             ) {
+                // Tell the watch the route moved BEFORE any audio goes out, and wait for
+                // it to land. Ordering is load-bearing on a phone-initiated switch: the
+                // transport opens with an audio-start event, and the watch only opens its
+                // speaker for that event if it already believes it owns the route. Start
+                // the transport first and the audio-start arrives while the watch still
+                // thinks audio is on the phone, so it never opens the speaker - and the
+                // snapshot that follows updates the route without opening it either. The
+                // chunks then stream to a closed speaker and playback stays silent until
+                // the next track, which is what "the toggle doesn't switch straight away"
+                // was. (The watch drives its own toggle locally, so it never had this.)
+                // sendStateSnapshot suspends until the watch acks, so by the time the
+                // transport starts, the route is applied on both sides and the audio
+                // stream's sequence numbering starts from a speaker that is already open.
+                sendStateSnapshot()
                 startTransport(activeGeneration)
             }
             // Notification visibility depends on the route, so refresh it.
@@ -2602,7 +2616,7 @@ class PebblePlaybackService : MediaSessionService() {
         val coverArtToggled = coverArtBackgroundConfig != null &&
             (coverArtBackgroundConfig != 0) != coverArtBackground
         coverArtBackgroundConfig?.let { coverArtBackground = it != 0 }
-        themeConfig?.let { watchTheme = it.coerceIn(ThemeTeal, ThemeMono) }
+        themeConfig?.let { watchTheme = it.coerceIn(ThemeTeal, ThemeArcade) }
         cacheSizeConfig?.let {
             var mb = it.coerceIn(MIN_CACHE_SIZE_MB, MAX_CACHE_SIZE_MB)
             mb = (mb / CACHE_SIZE_STEP_MB) * CACHE_SIZE_STEP_MB
@@ -3027,6 +3041,7 @@ class PebblePlaybackService : MediaSessionService() {
         private const val ThemeSunset = 2
         private const val ThemeDefault = 3
         private const val ThemeMono = 4
+        private const val ThemeArcade = 5
     }
 
     /**

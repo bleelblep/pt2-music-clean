@@ -52,7 +52,10 @@ import dev.pebble.musicbridge.ui.info.InfoScreen
 import dev.pebble.musicbridge.ui.library.LibraryScreen
 import dev.pebble.musicbridge.ui.nowplaying.DreamwavePlayerSheet
 import dev.pebble.musicbridge.ui.search.SearchScreen
+import dev.pebble.musicbridge.ui.appearance.AppearanceScreen
 import dev.pebble.musicbridge.ui.theme.ThemeMode
+import dev.pebble.musicbridge.ui.theme.UiPrefs
+import dev.pebble.musicbridge.ui.theme.WatchAccent
 import dev.pebble.musicbridge.ui.theme.rememberWatchAccentScheme
 
 /** Bottom-bar destinations — three, as upstream has them. */
@@ -68,7 +71,7 @@ enum class DreamwaveTab(val label: String, val icon: Int) {
  * no phone editor: the watch's settings blob is authoritative and overwrote whatever
  * the phone UI set on every sync, so a phone-side editor could only ever diverge.
  */
-private enum class Subscreen { NONE, CACHE, INFO }
+private enum class Subscreen { NONE, CACHE, INFO, APPEARANCE }
 
 /** rememberSaveable stores enum names; a removed value must not crash a state restore. */
 private inline fun <reified T : Enum<T>> safeEnumValueOf(name: String, fallback: T): T =
@@ -83,7 +86,14 @@ fun DreamwaveApp(
     // initialTheme is the synchronously-read prefs value, used only until the service
     // binds and publishes the real one — otherwise frame one would flash the default.
     val settings by viewModel.settings.collectAsState()
-    val themeIndex = settings.theme.takeIf { it in 0..4 } ?: viewModel.initialTheme
+
+    // The phone's theme is its own choice now, defaulting to whatever the watch is
+    // wearing. Only that fall-back path reads the watch's value, so a theme picked in
+    // Appearance no longer moves when the watch's theme moves.
+    val appTheme by viewModel.appTheme.collectAsState()
+    val watchTheme = settings.theme.takeIf { it in WatchAccent.PALETTES.indices }
+        ?: viewModel.initialTheme
+    val themeIndex = if (appTheme == UiPrefs.FOLLOW_WATCH) watchTheme else appTheme
 
     // PixelPlayer's own theme, unmodified. Upstream feeds it a scheme derived from
     // album artwork; we feed it one derived from the watch's accent through the
@@ -206,11 +216,17 @@ fun DreamwaveApp(
                                 onBack = { currentSub = Subscreen.NONE.name },
                             )
 
+                            Subscreen.APPEARANCE -> AppearanceScreen(
+                                viewModel = viewModel,
+                                onBack = { currentSub = Subscreen.NONE.name },
+                            )
+
                             Subscreen.NONE -> when (targetTab) {
                                 DreamwaveTab.HOME -> HomeScreen(
                                     viewModel = viewModel,
                                     onOpenCache = { currentSub = Subscreen.CACHE.name },
                                     onOpenInfo = { currentSub = Subscreen.INFO.name },
+                                    onOpenAppearance = { currentSub = Subscreen.APPEARANCE.name },
                                     onOpenLibrary = { currentTab = DreamwaveTab.LIBRARY.name },
                                 )
 
