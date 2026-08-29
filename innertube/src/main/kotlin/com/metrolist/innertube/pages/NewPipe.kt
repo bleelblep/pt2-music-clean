@@ -7,6 +7,7 @@ import io.ktor.http.parseQueryString
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.downloader.CancellableCall
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request
 import org.schabi.newpipe.extractor.downloader.Response
@@ -51,12 +52,65 @@ private class NewPipeDownloaderImpl(
             }.build()
 
     @Throws(IOException::class, ReCaptchaException::class)
+    override fun executeAsync(request: Request, callback: AsyncCallback?): CancellableCall {
+        val call = client.newCall(
+            okhttp3.Request
+                .Builder()
+                .method(request.httpMethod(), request.dataToSend()?.toRequestBody())
+                .url(request.url())
+                .addHeader("User-Agent", YouTubeClient.USER_AGENT_WEB)
+                .apply {
+                    request.headers().forEach { (name, values) ->
+                        removeHeader(name)
+                        values.forEach { addHeader(name, it) }
+                    }
+                }
+                .build(),
+        )
+        val cancellable = CancellableCall(call)
+        call.enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                cancellable.setFinished()
+                callback?.onError(e)
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                try {
+                    if (response.code == 429) {
+                        response.close()
+                        callback?.onError(ReCaptchaException("reCaptcha Challenge requested", request.url()))
+                    } else {
+                        val rawBody = response.body.bytes()
+                        callback?.onSuccess(
+                            Response(
+                                response.code,
+                                response.message,
+                                response.headers.toMultimap(),
+                                normalizeResponseBody(
+                                    response.request.url.toString(),
+                                    rawBody.toString(Charsets.UTF_8),
+                                ),
+                                rawBody,
+                                response.request.url.toString(),
+                            ),
+                        )
+                    }
+                } catch (e: Exception) {
+                    callback?.onError(e)
+                } finally {
+                    cancellable.setFinished()
+                }
+            }
+        })
+        return cancellable
+    }
+
+    @Throws(IOException::class, ReCaptchaException::class)
     override fun execute(request: Request): Response {
         val httpMethod = request.httpMethod()
         val url = request.url()
         val headers = request.headers()
         val dataToSend = request.dataToSend()
-
         val requestBuilder =
             okhttp3.Request
                 .Builder()
@@ -84,12 +138,14 @@ private class NewPipeDownloaderImpl(
         }
 
         val latestUrl = response.request.url.toString()
-        val responseBodyToReturn = normalizeResponseBody(latestUrl, response.body.string())
+        val rawBody = response.body.bytes()
+        val responseBodyToReturn = normalizeResponseBody(latestUrl, rawBody.toString(Charsets.UTF_8))
         return Response(
             response.code,
             response.message,
             response.headers.toMultimap(),
             responseBodyToReturn,
+            rawBody,
             latestUrl,
         )
     }

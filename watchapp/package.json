@@ -1,7 +1,7 @@
 {
-  "name": "dreamwave",
+  "name": "music-pbl",
   "author": "dreamwave",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "private": true,
   "keywords": [
     "pebble-app"
@@ -10,7 +10,7 @@
     "@rebble/clay": "^1.0.8"
   },
   "pebble": {
-    "displayName": "dreamwave",
+    "displayName": "music-pbl",
     "uuid": "38d45a52-e0f8-4db0-92ad-1fc852703e69",
     "sdkVersion": "3",
     "enableMultiJS": true,
@@ -105,10 +105,27 @@
           "characterRegex": "[ -~]"
         },
         {
+          "type": "font",
+          "name": "FONT_LECO_14",
+          "file": "LECO1976Regular.otf",
+          "characterRegex": "[ -~]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_26",
+          "file": "LECO1976Regular.otf",
+          "characterRegex": "[ -~]"
+        },
+        {
           "type": "bitmap",
           "name": "IMAGE_MENU_ICON",
           "file": "menu_icon.png",
           "menuIcon": true
+        },
+        {
+          "type": "raw",
+          "name": "DOC_NOTES",
+          "file": "doc_notes.txt"
         },
         {
           "type": "bitmap",

@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PT2 Music Touch Prototype - Bespoke Diamond + Tri-Burst</title>
+<style>
+  :root {
+    /* Bespoke UI, Default Dark from watchapp/src/c/main.c (ThemeDefaultDark). */
+    --bg: #000000;
+    --panel: #0e0f1a;
+    --line: #262942;
+    --ink: #ffffff;
+    --muted: #aaaaaa;
+    --accent: #5555aa;
+    --accent2: #d7d7ff;
+    --ok: #d7d7ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    color: var(--ink);
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+    background: var(--bg);
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 28px 14px 48px; }
+  h1 { margin: 8px 0 8px; font-size: clamp(28px, 4.8vw, 48px); line-height: .96; letter-spacing: -.03em; }
+  .eyebrow { color: var(--muted); letter-spacing: .14em; text-transform: uppercase; font: 700 11px/1.2 "Consolas", monospace; }
+  .intro { margin: 0 0 16px; color: var(--muted); max-width: 780px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+  .btn {
+    border: 1px solid #35395a;
+    background: #16182a;
+    color: #ececff;
+    border-radius: 999px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font: 700 12px/1 "Consolas", monospace;
+  }
+  .btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(308px, 1fr)); gap: 16px; }
+  .card {
+    background: #0b0d17;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px;
+  }
+  .card h2 { margin: 0 0 4px; font-size: 20px; }
+  .card p { margin: 0 0 10px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+  .watch {
+    width: 240px;
+    height: 274px;
+    margin: 0 auto 10px;
+    padding: 17px 20px;
+    border-radius: 29px;
+    background: #1d2027;
+    box-shadow: 0 10px 18px #0008, inset 0 1px 1px #ffffff22;
+    position: relative;
+  }
+  .watch:before, .watch:after {
+    content: "";
+    position: absolute;
+    right: -8px;
+    width: 8px;
+    border-radius: 0 5px 5px 0;
+    background: #2c3335;
+  }
+  .watch:before { top: 53px; height: 42px; }
+  .watch:after { top: 116px; height: 73px; }
+
+  .screen {
+    width: 200px;
+    height: 228px;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    background: #000;
+    box-shadow: inset 0 0 0 1px #20233c;
+    touch-action: none;
+    user-select: none;
+  }
+  .screen * { position: absolute; }
+  .cover {
+    left: 5px;
+    top: 6px;
+    width: 190px;
+    height: 150px;
+    border-radius: 8px;
+    background:
+      radial-gradient(circle at 65% 20%, #ffd196 0 9%, transparent 32%),
+      radial-gradient(circle at 20% 78%, #5b6daf96 0 21%, transparent 47%),
+      linear-gradient(140deg, #10172a, #2a2140 55%, #121523);
+  }
+  .rail { left: 5px; top: 160px; width: 190px; height: 6px; border-radius: 3px; background: #000; }
+  .rail .fill { left: 0; top: 0; height: 6px; width: 76px; border-radius: 3px; background: var(--accent); }
+  .song { left: 14px; top: 172px; width: 120px; color: #fff; font: 700 19px/20px "Avenir Next", sans-serif; }
+  .artist { left: 14px; top: 197px; width: 120px; color: #fff; font: 500 14px/16px "Avenir Next", sans-serif; }
+  .np-card { left: 5px; top: 170px; width: 190px; height: 52px; border-radius: 6px; background: var(--accent); }
+
+  .guide { border: 1px solid #aaaaaa66; border-radius: 10px; pointer-events: none; }
+  .cross-line {
+    height: 2px;
+    background: #aaaaaa88;
+    transform-origin: 0 1px;
+    pointer-events: none;
+  }
+  .center-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #fff; box-shadow: 0 0 0 1px #000;
+    pointer-events: none;
+  }
+  .deadzone {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px dashed #ffffff88;
+    background: #0005;
+    pointer-events: none;
+    opacity: 0;
+  }
+  .screen.interacting .deadzone { opacity: 1; }
+  .flash {
+    left: 10px;
+    top: 10px;
+    width: 26px;
+    height: 26px;
+    border-radius: 13px;
+    background: #000;
+    border: 1px solid #ffffffa0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+  }
+  .flash svg {
+    width: 14px;
+    height: 14px;
+    stroke: #fff;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .diamond-target {
+    width: 24px;
+    height: 24px;
+    border: 1px solid #888;
+    background: #000;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    transition: transform 90ms ease, background 90ms ease, border-color 90ms ease, color 90ms ease;
+    opacity: 0;
+  }
+  .diamond-target svg {
+    width: 13px;
+    height: 13px;
+    stroke: #fff;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .screen.interacting .diamond-target { opacity: 1; }
+  .diamond-target.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    opacity: 1;
+    transform: scale(1.03);
+  }
+  .diamond-target.active svg { stroke: #fff; }
+  .diamond-target.fire {
+    box-shadow: inset 0 0 0 2px #fff;
+  }
+  .drag-origin,
+  .drag-line {
+    pointer-events: none;
+    opacity: 0;
+  }
+  .drag-origin {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 0 1px #000;
+  }
+  .drag-line {
+    height: 2px;
+    transform-origin: 0 1px;
+    background: #fff;
+  }
+  .drag-on .drag-origin,
+  .drag-on .drag-line {
+    opacity: 1;
+  }
+  .screen.confirm .rail .fill {
+    width: 190px !important;
+    background: #fff;
+  }
+
+  .info {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #2d3150;
+    display: grid;
+    gap: 4px;
+    color: #d5d9f4;
+    font-size: 11.5px;
+  }
+  .info b { color: #f4fffd; }
+
+  .log {
+    margin-top: 8px;
+    border: 1px solid #2d3150;
+    border-radius: 8px;
+    background: #090b16;
+    max-height: 132px;
+    overflow: auto;
+    font: 700 11px/1.35 "Arial Narrow", "Segoe UI", sans-serif;
+    color: #d7dbf6;
+    padding: 7px 8px;
+  }
+  .log .ok { color: #fff; }
+
+  .mapping {
+    margin-top: 18px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #0d1020;
+    padding: 12px;
+  }
+  .mapping h3 { margin: 0 0 8px; }
+  .mapping table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .mapping th, .mapping td { border-bottom: 1px solid #242844; padding: 6px 4px; text-align: left; }
+  .mapping code { color: #d7d7ff; }
+
+  @media (max-width: 700px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">pt2 music touch prototype · bespoke ui skin · concepts 2 and 4</div>
+  <h1>Diamond Cross + Tri-Burst</h1>
+  <p class="intro">Try gestures directly on each watch screen with mouse or touch. This pass is restyled to feel like bespoke UI language: compact labels, accent confirmations, and no debug-sounding copy on top of art.</p>
+
+  <div class="controls">
+    <button class="btn on" id="btn-debug">Debug overlay ON</button>
+    <button class="btn" id="btn-clear">Clear logs</button>
+  </div>
+
+  <section class="grid">
+    <article class="card">
+      <h2>Concept 2 - Diamond Cross</h2>
+      <p>Four corner touch targets over album art. Drag toward a corner to arm that target, then release to fire. Overlay text now mirrors bespoke tone and cadence.</p>
+      <div class="watch"><div class="screen" id="diamond-screen">
+        <div class="cover"></div>
+        <div class="rail"><div class="fill"></div></div>
+        <div class="np-card"></div>
+        <div class="song">Bloom Later</div>
+        <div class="artist">Chalk Vessels</div>
+
+        <div class="guide" id="diamond-guide" style="left:13px;top:14px;width:174px;height:134px;clip-path:polygon(0 50%,50% 0,100% 50%,50% 100%)"></div>
+        <div class="cross-line" style="left:100px;top:78px;width:58px;transform:rotate(-45deg)"></div>
+        <div class="cross-line" style="left:100px;top:78px;width:58px;transform:rotate(45deg)"></div>
+        <div class="cross-line" style="left:100px;top:78px;width:58px;transform:rotate(135deg)"></div>
+        <div class="cross-line" style="left:100px;top:78px;width:58px;transform:rotate(-135deg)"></div>
+        <div class="deadzone" style="left:84px;top:62px"></div>
+        <div class="center-dot" style="left:95px;top:73px"></div>
+        <div class="diamond-target" id="d-target-n" style="left:88px;top:10px"></div>
+        <div class="diamond-target" id="d-target-nw" style="left:12px;top:14px"></div>
+        <div class="diamond-target" id="d-target-ne" style="left:170px;top:14px"></div>
+        <div class="diamond-target" id="d-target-sw" style="left:12px;top:124px"></div>
+        <div class="diamond-target" id="d-target-se" style="left:170px;top:124px"></div>
+        <div class="drag-origin" id="diamond-origin"></div>
+        <div class="drag-line" id="diamond-line"></div>
+
+        <div class="flash" id="diamond-flash"></div>
+      </div></div>
+      <div class="info">
+        <div><b>Detect:</b> corner target lock with live highlight</div>
+        <div><b>Commit:</b> release while a corner is armed</div>
+      </div>
+      <div class="log" id="diamond-log"></div>
+    </article>
+
+    <article class="card">
+      <h2>Concept 4 - Tri-Burst</h2>
+      <p>Quick outward burst chooses one spoke; hold for 220ms to confirm. Releasing early cancels to avoid accidental triggers.</p>
+      <div class="watch"><div class="screen" id="triburst-screen">
+        <div class="cover"></div>
+        <div class="rail"><div class="fill"></div></div>
+        <div class="np-card"></div>
+        <div class="song">Bloom Later</div>
+        <div class="artist">Chalk Vessels</div>
+
+        <div class="guide" id="triburst-guide" style="left:5px;top:6px;width:190px;height:150px"></div>
+        <div class="cross-line" style="left:99px;top:78px;width:80px;transform:rotate(0deg)"></div>
+        <div class="cross-line" style="left:99px;top:78px;width:80px;transform:rotate(120deg)"></div>
+        <div class="cross-line" style="left:99px;top:78px;width:80px;transform:rotate(-120deg)"></div>
+        <div class="center-dot" style="left:95px;top:73px"></div>
+
+        <div class="flash" id="triburst-flash"></div>
+      </div></div>
+      <div class="info">
+        <div><b>Detect:</b> first fast burst over 32px in one of 3 sectors</div>
+        <div><b>Confirm:</b> keep finger down briefly to commit action</div>
+      </div>
+      <div class="log" id="triburst-log"></div>
+    </article>
+  </section>
+
+  <section class="mapping">
+    <h3>Current placeholder mappings (to be replaced by your choices)</h3>
+    <table>
+      <thead><tr><th>Gesture</th><th>Default action label</th></tr></thead>
+      <tbody>
+        <tr><td><code>Diamond N</code></td><td>Output Switch</td></tr>
+        <tr><td><code>Diamond NW</code></td><td>Previous Track</td></tr>
+        <tr><td><code>Diamond NE</code></td><td>Next Track</td></tr>
+        <tr><td><code>Diamond SW</code></td><td>Shuffle</td></tr>
+        <tr><td><code>Diamond SE</code></td><td>Loop</td></tr>
+        <tr><td><code>Tri Right</code></td><td>Play/Pause</td></tr>
+        <tr><td><code>Tri Up-Left</code></td><td>Shuffle Toggle</td></tr>
+        <tr><td><code>Tri Down-Left</code></td><td>Loop Cycle</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+(() => {
+  const state = { debug: true };
+  const debugBtn = document.getElementById("btn-debug");
+  const clearBtn = document.getElementById("btn-clear");
+
+  const diamondMap = {
+    N: "Output Switch",
+    NW: "Previous Track",
+    NE: "Next Track",
+    SW: "Shuffle",
+    SE: "Loop"
+  };
+
+  const triMap = {
+    R: "Play/Pause",
+    UL: "Shuffle",
+    DL: "Loop"
+  };
+
+  function appendLog(el, msg, ok) {
+    const row = document.createElement("div");
+    row.textContent = `${new Date().toLocaleTimeString()}  ${msg}`;
+    if (ok) row.className = "ok";
+    el.prepend(row);
+  }
+
+  function iconSvg(name) {
+    if (name === "prev") return '<svg viewBox="0 0 16 16"><path d="M11 3l-6 5 6 5"></path><path d="M4 3v10"></path></svg>';
+    if (name === "next") return '<svg viewBox="0 0 16 16"><path d="M5 3l6 5-6 5"></path><path d="M12 3v10"></path></svg>';
+    if (name === "shuffle") return '<svg viewBox="0 0 16 16"><path d="M2 4h3l7 8h2"></path><path d="M12 2l2 2-2 2"></path><path d="M2 12h3l2-2"></path><path d="M12 10l2 2-2 2"></path></svg>';
+    if (name === "loop") return '<svg viewBox="0 0 16 16"><path d="M3 5h8v3"></path><path d="M13 11H5V8"></path><path d="M9 3l2 2-2 2"></path><path d="M7 9l-2 2 2 2"></path></svg>';
+    if (name === "play") return '<svg viewBox="0 0 16 16"><path d="M4 3l8 5-8 5z" fill="#fff" stroke="none"></path></svg>';
+    if (name === "output") return '<svg viewBox="0 0 16 16"><rect x="3" y="2" width="10" height="12" rx="2"></rect><path d="M6 5h4"></path><path d="M6 11h4"></path><path d="M8 8h5"></path><path d="M11 6l2 2-2 2"></path></svg>';
+    return '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3" fill="#fff" stroke="none"></circle></svg>';
+  }
+
+  function iconForAction(action) {
+    if (!action) return "dot";
+    if (action.indexOf("Previous") >= 0) return "prev";
+    if (action.indexOf("Next") >= 0) return "next";
+    if (action.indexOf("Shuffle") >= 0) return "shuffle";
+    if (action.indexOf("Loop") >= 0) return "loop";
+    if (action.indexOf("Output") >= 0) return "output";
+    if (action.indexOf("Play") >= 0 || action.indexOf("Pause") >= 0) return "play";
+    return "dot";
+  }
+
+  function setFlash(el, action) {
+    el.innerHTML = iconSvg(iconForAction(action));
+  }
+
+  function pulseRail(screen) {
+    screen.classList.add("confirm");
+    setTimeout(() => screen.classList.remove("confirm"), 180);
+  }
+
+  function vecFrom(screen, e) {
+    const r = screen.getBoundingClientRect();
+    return {
+      x: e.clientX - r.left,
+      y: e.clientY - r.top
+    };
+  }
+
+  function angleDeg(dx, dy) {
+    return Math.atan2(dy, dx) * 180 / Math.PI;
+  }
+
+  function len(dx, dy) {
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // ---------- Diamond Cross ----------
+  const dScreen = document.getElementById("diamond-screen");
+  const dFlash = document.getElementById("diamond-flash");
+  const dLog = document.getElementById("diamond-log");
+  const dGuide = document.getElementById("diamond-guide");
+  const dOrigin = document.getElementById("diamond-origin");
+  const dLine = document.getElementById("diamond-line");
+  const dTargetEls = {
+    N: document.getElementById("d-target-n"),
+    NW: document.getElementById("d-target-nw"),
+    NE: document.getElementById("d-target-ne"),
+    SW: document.getElementById("d-target-sw"),
+    SE: document.getElementById("d-target-se")
+  };
+  const D_CENTER_X = 100;
+  const D_CENTER_Y = 78;
+  const D_DEADZONE_R = 16;
+  const d = { down: false, sx: 0, sy: 0, px: 0, py: 0 };
+
+  function updateDiamondTargetLabels() {
+    dTargetEls.N.innerHTML = iconSvg(iconForAction(diamondMap.N));
+    dTargetEls.NW.innerHTML = iconSvg(iconForAction(diamondMap.NW));
+    dTargetEls.NE.innerHTML = iconSvg(iconForAction(diamondMap.NE));
+    dTargetEls.SW.innerHTML = iconSvg(iconForAction(diamondMap.SW));
+    dTargetEls.SE.innerHTML = iconSvg(iconForAction(diamondMap.SE));
+  }
+
+  function diamondDir(dx, dy) {
+    const adx = Math.abs(dx);
+    const ady = Math.abs(dy);
+    if (adx < 10 && ady < 10) return null;
+    if (dy < -12 && adx * 2 <= -dy) return "N";
+    if (dx < 0 && dy < 0) return "NW";
+    if (dx > 0 && dy < 0) return "NE";
+    if (dx < 0 && dy > 0) return "SW";
+    return "SE";
+  }
+
+  function diamondCornerAt(x, y) {
+    const targets = [
+      { id: "N",  cx: 100, cy: 22 },
+      { id: "NW", cx: 24,  cy: 26 },
+      { id: "NE", cx: 182, cy: 26 },
+      { id: "SW", cx: 24,  cy: 136 },
+      { id: "SE", cx: 182, cy: 136 }
+    ];
+    for (let i = 0; i < targets.length; i++) {
+      const dx = x - targets[i].cx;
+      const dy = y - targets[i].cy;
+      if (dx * dx + dy * dy <= 16 * 16) return targets[i].id;
+    }
+    return null;
+  }
+
+  function diamondInDeadzone(x, y) {
+    const dx = x - D_CENTER_X;
+    const dy = y - D_CENTER_Y;
+    return dx * dx + dy * dy <= D_DEADZONE_R * D_DEADZONE_R;
+  }
+
+  function setDiamondActive(dir) {
+    Object.keys(dTargetEls).forEach((key) => {
+      dTargetEls[key].classList.toggle("active", key === dir);
+    });
+  }
+
+  function pulseDiamond(dir) {
+    if (!dir || !dTargetEls[dir]) return;
+    dTargetEls[dir].classList.add("fire");
+    setTimeout(() => dTargetEls[dir].classList.remove("fire"), 220);
+  }
+
+  function updateDragVisual() {
+    if (!d.down) {
+      dScreen.classList.remove("drag-on");
+      return;
+    }
+    dScreen.classList.add("drag-on");
+    const dx = d.px - d.sx;
+    const dy = d.py - d.sy;
+    const dist = len(dx, dy);
+    const ang = angleDeg(dx, dy);
+    dOrigin.style.left = `${d.sx - 4}px`;
+    dOrigin.style.top = `${d.sy - 4}px`;
+    dLine.style.left = `${d.sx}px`;
+    dLine.style.top = `${d.sy - 1}px`;
+    dLine.style.width = `${Math.max(0, dist)}px`;
+    dLine.style.transform = `rotate(${ang}deg)`;
+  }
+
+  dScreen.addEventListener("pointerdown", (e) => {
+    dScreen.setPointerCapture(e.pointerId);
+    const p = vecFrom(dScreen, e);
+    d.down = true;
+    d.sx = p.x; d.sy = p.y; d.px = p.x; d.py = p.y;
+    dScreen.classList.add("interacting");
+    const locked = diamondCornerAt(d.sx, d.sy);
+    setDiamondActive(locked);
+    setFlash(dFlash, locked ? diamondMap[locked] : null);
+    updateDragVisual();
+  });
+
+  dScreen.addEventListener("pointermove", (e) => {
+    if (!d.down) return;
+    const p = vecFrom(dScreen, e);
+    d.px = p.x; d.py = p.y;
+    const dx = d.px - d.sx;
+    const dy = d.py - d.sy;
+    if (diamondInDeadzone(d.px, d.py)) {
+      setDiamondActive(null);
+      setFlash(dFlash, null);
+      return;
+    }
+    const locked = diamondCornerAt(d.px, d.py);
+    const dir = locked || diamondDir(dx, dy);
+    setDiamondActive(dir);
+    updateDragVisual();
+    if (!dir) return;
+    const dist = len(dx, dy);
+    const strength = dist >= 42 ? "LONG" : "SHORT";
+    setFlash(dFlash, diamondMap[dir]);
+  });
+
+  dScreen.addEventListener("pointerup", () => {
+    if (!d.down) return;
+    d.down = false;
+    const dx = d.px - d.sx;
+    const dy = d.py - d.sy;
+    const dist = len(dx, dy);
+    if (diamondInDeadzone(d.px, d.py)) {
+      dScreen.classList.remove("interacting");
+      dScreen.classList.remove("drag-on");
+      setDiamondActive(null);
+      setFlash(dFlash, null);
+      appendLog(dLog, "No action (released in center deadzone)", false);
+      return;
+    }
+    const dir = diamondCornerAt(d.px, d.py) || diamondDir(dx, dy);
+    dScreen.classList.remove("interacting");
+    dScreen.classList.remove("drag-on");
+    setDiamondActive(null);
+    if (!dir || dist < 18) {
+      setFlash(dFlash, null);
+      appendLog(dLog, "No action (below movement threshold)", false);
+      return;
+    }
+    const strength = dist >= 42 ? "long" : "short";
+    const action = diamondMap[dir];
+    setFlash(dFlash, action);
+    pulseRail(dScreen);
+    pulseDiamond(dir);
+    appendLog(dLog, `[${dir}] ${action} (${strength})`, true);
+  });
+
+  // ---------- Tri-Burst ----------
+  const tScreen = document.getElementById("triburst-screen");
+  const tFlash = document.getElementById("triburst-flash");
+  const tLog = document.getElementById("triburst-log");
+  const tGuide = document.getElementById("triburst-guide");
+  const t = { down: false, sx: 0, sy: 0, px: 0, py: 0, spoke: null, timer: null, confirmed: false };
+
+  function triSpoke(dx, dy) {
+    const ang = angleDeg(dx, dy);
+    if (ang > -45 && ang <= 45) return "R";
+    if (ang > 45 || ang <= -165) return "DL";
+    return "UL";
+  }
+
+  function triReset() {
+    if (t.timer) {
+      clearTimeout(t.timer);
+      t.timer = null;
+    }
+    t.spoke = null;
+    t.confirmed = false;
+  }
+
+  tScreen.addEventListener("pointerdown", (e) => {
+    tScreen.setPointerCapture(e.pointerId);
+    const p = vecFrom(tScreen, e);
+    t.down = true;
+    t.sx = p.x; t.sy = p.y; t.px = p.x; t.py = p.y;
+    tScreen.classList.add("interacting");
+    triReset();
+    setFlash(tFlash, null);
+  });
+
+  tScreen.addEventListener("pointermove", (e) => {
+    if (!t.down) return;
+    const p = vecFrom(tScreen, e);
+    t.px = p.x; t.py = p.y;
+    const dx = t.px - t.sx;
+    const dy = t.py - t.sy;
+    const dist = len(dx, dy);
+
+    if (!t.spoke && dist >= 32) {
+      t.spoke = triSpoke(dx, dy);
+      setFlash(tFlash, triMap[t.spoke]);
+      t.timer = setTimeout(() => {
+        if (!t.down || !t.spoke) return;
+        t.confirmed = true;
+        setFlash(tFlash, triMap[t.spoke]);
+        pulseRail(tScreen);
+        appendLog(tLog, `[${t.spoke}] ${triMap[t.spoke]} confirmed`, true);
+      }, 220);
+      return;
+    }
+  });
+
+  tScreen.addEventListener("pointerup", () => {
+    if (!t.down) return;
+    t.down = false;
+    if (!t.spoke) {
+      tScreen.classList.remove("interacting");
+      setFlash(tFlash, null);
+      appendLog(tLog, "No action (burst threshold not reached)", false);
+      triReset();
+      return;
+    }
+    if (!t.confirmed) {
+      tScreen.classList.remove("interacting");
+      setFlash(tFlash, null);
+      appendLog(tLog, `[${t.spoke}] canceled (released before hold confirm)`, false);
+      triReset();
+      return;
+    }
+    tScreen.classList.remove("interacting");
+    triReset();
+  });
+
+  function syncDebug() {
+    const display = state.debug ? "block" : "none";
+    [dGuide, tGuide, dOrigin, dLine].forEach((el) => { el.style.display = display; });
+  }
+
+  debugBtn.addEventListener("click", () => {
+    state.debug = !state.debug;
+    debugBtn.classList.toggle("on", state.debug);
+    debugBtn.textContent = state.debug ? "Debug overlay ON" : "Debug overlay OFF";
+    syncDebug();
+  });
+
+  clearBtn.addEventListener("click", () => {
+    dLog.innerHTML = "";
+    tLog.innerHTML = "";
+    setFlash(dFlash, null);
+    setFlash(tFlash, null);
+    setDiamondActive(null);
+    dScreen.classList.remove("interacting");
+    tScreen.classList.remove("interacting");
+  });
+
+  updateDiamondTargetLabels();
+  setFlash(dFlash, null);
+  setFlash(tFlash, null);
+  syncDebug();
+})();
+</script>
+</body>
+</html>

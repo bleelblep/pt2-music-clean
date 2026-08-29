@@ -1,16 +1,16 @@
 package dev.pebble.musicbridge
 
-import dev.maxrave.pipepipe.extractor.NewPipe
-import dev.maxrave.pipepipe.extractor.ServiceList
-import dev.maxrave.pipepipe.extractor.downloader.CancellableCall
-import dev.maxrave.pipepipe.extractor.downloader.Downloader
-import dev.maxrave.pipepipe.extractor.downloader.Request
-import dev.maxrave.pipepipe.extractor.downloader.Response
-import dev.maxrave.pipepipe.extractor.exceptions.ReCaptchaException
-import dev.maxrave.pipepipe.extractor.search.SearchInfo
-import dev.maxrave.pipepipe.extractor.services.youtube.search.filter.YoutubeFilters
-import dev.maxrave.pipepipe.extractor.stream.StreamInfo
-import dev.maxrave.pipepipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.downloader.CancellableCall
+import org.schabi.newpipe.extractor.downloader.Downloader
+import org.schabi.newpipe.extractor.downloader.Request
+import org.schabi.newpipe.extractor.downloader.Response
+import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
+import org.schabi.newpipe.extractor.search.SearchInfo
+import org.schabi.newpipe.extractor.services.youtube.search.filter.YoutubeFilters
+import org.schabi.newpipe.extractor.stream.StreamInfo
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException

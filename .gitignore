@@ -10,6 +10,7 @@ gen/
 
 # --- Android artifacts ---
 *.apk
+*.apkm
 *.aab
 *.ap_
 *.dex

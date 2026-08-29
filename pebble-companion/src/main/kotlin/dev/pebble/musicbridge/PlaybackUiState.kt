@@ -21,6 +21,13 @@ data class PlaybackUiState(
     val theme: Int = 3, // ThemeDefault
     val queueName: String? = null,
     val queueSize: Int = 0,
+    /**
+     * Artwork whose location the backend already knows, as a URI string - Symfonium hands
+     * one over with its metadata, usually a `content://` into its own provider. Null means
+     * "resolve it yourself", which is what the YouTube backend needs since its artwork URL
+     * is looked up per track. See [DreamwaveViewModel.resolveArtworkFor].
+     */
+    val artworkUri: String? = null,
 ) {
     val canSkip: Boolean
         get() = loopMode == LoopMode.ALL || shuffleEnabled

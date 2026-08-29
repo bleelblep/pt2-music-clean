@@ -233,7 +233,8 @@ class InnerTube {
                         if (client.isEmbedded) {
                             it.copy(
                                 thirdParty = Context.ThirdParty(
-                                    embedUrl = "https://www.youtube.com/watch?v=${videoId}"
+                                    embedUrl = client.embedUrl
+                                        ?: "https://www.youtube.com/watch?v=${videoId}"
                                 )
                             )
                         } else it

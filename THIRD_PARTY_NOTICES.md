@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-This project (the **dreamwave** Pebble watchapp and its **pebble-companion**
+This project (the **music-pbl** Pebble watchapp and its **music-src**
 Android bridge) builds on, links against, or is inspired by the open-source
 projects below. Each is credited on the watchapp's **About** screen. Full
 license texts are in the [`licenses/`](licenses/) directory.
@@ -13,11 +13,27 @@ license texts are in the [`licenses/`](licenses/) directory.
 | **mirrormsg / watchimage** | Cover-art encoding pipeline (companion; linked as `watchimagebridge`) | AGPL-3.0-or-later | https://github.com/killdano/mirrormsg |
 | **PixelPlayer** | Player UI layer (vendored under `pixelplay/` in the companion). Vendored at the last MIT-licensed commit (`39030156`); later commits are proprietary and are not used. | MIT | https://github.com/PixelPlayerHQ/PixelPlayer |
 | **Roboto Flex** | Typeface bundled with the companion app (`robotoflex_variable.ttf`) | SIL OFL-1.1 | https://github.com/TypeNetwork/Roboto-Flex |
+| **LECO 1976** | Typeface bundled with the watchapp (`LECO1976Regular.otf`), used for screen headers. Taken from the PebbleOS source release (`resources/normal/base/ttf/`), where it is the face behind the firmware's `FONT_KEY_LECO_*` numeral fonts. **See the note below.** | See note | https://github.com/google/pebble |
 | **Bobby Assistant** | Home-screen interaction inspiration (watchapp) | Apache-2.0 | https://github.com/pebble-dev/bobby-assistant |
 | **Tertiary Text** | Three-button keyboard concept (watchapp) | MIT | https://github.com/vgmoose/tertiary_text |
 
 The Pebble SDK itself (used to build the watchapp) is likewise Apache-2.0:
 https://github.com/google/pebble
+
+### Note on LECO 1976
+
+The file's own metadata reads `Copyright (c) 2009 by Samuel Carnoky. All rights
+reserved.` with `LECO 1976-Regular is a trademark of Samuel Carnoky.`
+(carnoky.com), and carries no embedded license or license URL. It ships inside the
+Apache-2.0 PebbleOS repository at `resources/normal/base/ttf/`, outside that
+repository's `third_party/` tree and with no license file of its own — so whether
+Pebble's blanket Apache-2.0 grant extends to a typeface it originally licensed
+commercially is not settled by anything in that repository.
+
+Redistributing the `.otf` may therefore need a license from Carnoky Type. Note
+that a built `.pbw` does **not** contain the `.otf`: the SDK rasterizes it to a
+bitmap subset of the ASCII range at the two sizes the app draws at. If that
+distinction matters for your distribution, it is worth confirming before release.
 
 ## License texts
 

@@ -1,0 +1,30 @@
+Who makes this watch. The SDK still calls the hardware a Pebble.
+The hardware family apps are built for. Emery is the Time 2's.
+Screen size in pixels.
+The PebbleOS version running on the watch.
+Battery left, read once when this screen opened.
+Whether a charger is attached, and whether it is still filling.
+Memory this app can still claim. Cover art alone wants 20 KB.
+Memory this app is holding right now.
+How sound is compressed for the trip over Bluetooth.
+What it decodes back to for the speaker: 16,000 samples a second.
+Size of one compressed audio packet.
+Sound samples each packet unpacks to.
+Whether the phone keeps songs it downloaded, for playing again offline.
+Storage the phone will spend on kept songs.
+Whether radio and autoplay tracks are kept too, not just ones you picked.
+Version of the language the watch and phone speak to each other.
+The feature flags the phone reported, raw. The rows below decode them.
+Largest message the watch can receive at once.
+Largest message the watch can send at once.
+Phone sends its whole playback state, not just what changed. No means an older companion.
+Phone tags each reply with the search it belongs to, so results from a search you abandoned are thrown away.
+Which app on the phone the music is coming from.
+Where the sound comes out.
+Counts route changes. Audio addressed to an older one is ignored.
+Counts tracks started, so packets from the song before are dropped.
+The audio packet expected next. A gap here is a lost packet.
+Loudness of the watch's own speaker.
+Loudness of the phone's media volume.
+Efficient spends less battery and bandwidth; Balanced sounds better.
+The same trade-off, for sound played on the phone.

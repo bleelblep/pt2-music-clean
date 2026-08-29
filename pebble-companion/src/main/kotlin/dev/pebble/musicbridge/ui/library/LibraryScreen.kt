@@ -65,6 +65,8 @@ import dev.pebble.musicbridge.ui.components.RowMenuItem
 import dev.pebble.musicbridge.ui.components.ScreenHeader
 import dev.pebble.musicbridge.ui.components.SongRow
 import dev.pebble.musicbridge.ui.components.SquircleShape
+import dev.pebble.musicbridge.ui.theme.ListItemMotion
+import dev.pebble.musicbridge.ui.theme.rememberListItemMotion
 
 /** The slices of the library you can look at. Upstream's chip row, with our nouns. */
 enum class LibraryTab(val label: String) {
@@ -104,8 +106,12 @@ private fun List<CachedSongEntry>.sortedForLibrary(sort: LibrarySort): List<Cach
 @Composable
 fun LibraryScreen(viewModel: DreamwaveViewModel) {
     val cache by viewModel.cacheState.collectAsState()
+    val isSymfonium by viewModel.isSymfonium.collectAsState()
     val recent by viewModel.recentlyPlayed.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
+    val symfoniumRecent by viewModel.symfoniumRecent.collectAsState()
+    val symfoniumFavorites by viewModel.symfoniumFavorites.collectAsState()
+    val symfoniumPlaylists by viewModel.symfoniumPlaylists.collectAsState()
     val playing by viewModel.uiState.collectAsState()
     val artworkUrls by viewModel.artworkUrls.collectAsState()
     val cachedIds by viewModel.cachedIds.collectAsState()
@@ -121,16 +127,27 @@ fun LibraryScreen(viewModel: DreamwaveViewModel) {
     var addToPlaylistTarget by remember { mutableStateOf<String?>(null) }
     // Safe parsing: state saved by an older version may name a tab that no longer
     // exists (e.g. the removed Artists tab).
-    val tab = runCatching { LibraryTab.valueOf(tabName) }.getOrDefault(LibraryTab.SONGS)
+    val savedTab = runCatching { LibraryTab.valueOf(tabName) }.getOrDefault(LibraryTab.SONGS)
+    // Symfonium has no "Songs" tab - that one lists this app's own stream cache, which
+    // the source switch doesn't follow. Land on Recent instead of a dead list.
+    val tab = if (isSymfonium && savedTab == LibraryTab.SONGS) LibraryTab.RECENT else savedTab
     val sort = runCatching { LibrarySort.valueOf(sortName) }.getOrDefault(LibrarySort.RECENT)
     val playlists by viewModel.playlists.collectAsState()
     val playlistSongs by viewModel.playlistSongs.collectAsState()
 
-    LaunchedEffect(Unit) {
-        viewModel.refreshCache()
-        viewModel.refreshRecentlyPlayed()
-        viewModel.refreshFavorites()
-        viewModel.refreshPlaylists()
+    // Each source fills its own lists. Re-running on a source flip keeps the screen
+    // from showing the previous backend's rows until it is revisited.
+    LaunchedEffect(isSymfonium) {
+        if (isSymfonium) {
+            // Symfonium playlists have no detail view; don't keep a YouTube one open.
+            openPlaylistId = null
+            viewModel.refreshSymfoniumLibrary()
+        } else {
+            viewModel.refreshCache()
+            viewModel.refreshRecentlyPlayed()
+            viewModel.refreshFavorites()
+            viewModel.refreshPlaylists()
+        }
     }
     LaunchedEffect(cache.entries) {
         viewModel.resolveArtworkForIds(cache.entries.map { it.videoId })
@@ -142,23 +159,32 @@ fun LibraryScreen(viewModel: DreamwaveViewModel) {
     val isPlaying = playing.playbackState == PlaybackUiState.PlaybackState.PLAYING
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    fun play(videoId: String) = viewModel.sendCommand(UiCommand.Play(videoId))
-    fun menuFor(videoId: String): List<RowMenuItem> = buildList {
-        add(RowMenuItem("Play now") { play(videoId) })
-        add(RowMenuItem("Add to playlist") { addToPlaylistTarget = videoId })
-        if (tab == LibraryTab.FAVORITES) {
-            add(RowMenuItem("Remove from favorites") {
-                viewModel.sendCommand(UiCommand.ToggleFavorite(videoId))
-                viewModel.refreshFavorites()
-            })
-        }
-        if (videoId in cachedIds) {
-            add(RowMenuItem("Remove from phone") {
-                viewModel.sendCommand(UiCommand.DeleteCachedSong(videoId))
-                viewModel.refreshCache()
-            })
+    fun play(videoId: String) = viewModel.playFromActiveSource(videoId)
+    // Playlists, favorites editing and the on-disk cache all belong to the YouTube
+    // backend; Symfonium rows are play-and-done, so they carry no menu.
+    fun menuFor(videoId: String): List<RowMenuItem> {
+        if (isSymfonium) return emptyList()
+        return buildList {
+            add(RowMenuItem("Play now") { play(videoId) })
+            add(RowMenuItem("Add to playlist") { addToPlaylistTarget = videoId })
+            if (tab == LibraryTab.FAVORITES) {
+                add(RowMenuItem("Remove from favorites") {
+                    viewModel.sendCommand(UiCommand.ToggleFavorite(videoId))
+                    viewModel.refreshFavorites()
+                })
+            }
+            if (videoId in cachedIds) {
+                add(RowMenuItem("Remove from phone") {
+                    viewModel.sendCommand(UiCommand.DeleteCachedSong(videoId))
+                    viewModel.refreshCache()
+                })
+            }
         }
     }
+
+    // Hoisted out of the list: `LazyListScope` is not a composable scope, so the
+    // section builders below cannot read the motion scheme themselves.
+    val listMotion = rememberListItemMotion()
 
     // One list for the whole page, header included. The title, chips and toolbar are
     // items rather than a fixed Column above the list, so they scroll away with the
@@ -176,11 +202,18 @@ fun LibraryScreen(viewModel: DreamwaveViewModel) {
         }
 
         item(key = "chips") {
+            // Songs (the on-disk cache) is a YouTube-backend view; Symfonium owns its
+            // own library, so that chip hides while the source is active.
+            val tabs = if (isSymfonium) {
+                LibraryTab.entries.filter { it != LibraryTab.SONGS }
+            } else {
+                LibraryTab.entries.toList()
+            }
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(LibraryTab.entries, key = { it.name }) { entry ->
+                items(tabs, key = { it.name }) { entry ->
                     CategoryChip(
                         label = entry.label,
                         selected = tab == entry,
@@ -198,8 +231,10 @@ fun LibraryScreen(viewModel: DreamwaveViewModel) {
                 // Shuffle draws from the tab being viewed.
                 val shufflePool = when (tab) {
                     LibraryTab.SONGS -> songs.map { it.videoId }
-                    LibraryTab.FAVORITES -> favorites.map { it.videoId }
-                    LibraryTab.RECENT -> recent.map { it.videoId }
+                    LibraryTab.FAVORITES ->
+                        (if (isSymfonium) symfoniumFavorites else favorites).map { it.videoId }
+                    LibraryTab.RECENT ->
+                        (if (isSymfonium) symfoniumRecent else recent).map { it.videoId }
                     LibraryTab.PLAYLISTS -> emptyList()
                 }
                 LibraryToolbar(
@@ -209,7 +244,9 @@ fun LibraryScreen(viewModel: DreamwaveViewModel) {
                     onShuffle = { shufflePool.randomOrNull()?.let(::play) },
                     onSort = { sortName = it.name },
                     onToggleGrid = { gridMode = !gridMode },
-                    showViewControls = true,
+                    // Sorting sizes and the grid covers are cache/artwork features of the
+                    // YouTube backend; Symfonium rows have neither, so the controls hide.
+                    showViewControls = !isSymfonium,
                 )
                 Spacer(Modifier.height(10.dp))
             }
@@ -223,22 +260,45 @@ fun LibraryScreen(viewModel: DreamwaveViewModel) {
                 isPlaying = isPlaying,
                 gridMode = gridMode,
                 emptyMessage = "Nothing cached yet — play something and it stays here.",
+                motion = listMotion,
                 onPlay = ::play,
                 menuFor = ::menuFor,
             )
 
             LibraryTab.FAVORITES -> songItems(
-                songs = favorites,
+                songs = if (isSymfonium) symfoniumFavorites else favorites,
                 artworkUrls = artworkUrls,
                 currentId = playing.videoId,
                 isPlaying = isPlaying,
                 gridMode = gridMode,
-                emptyMessage = "No favorites yet — tap the heart while a song plays.",
+                emptyMessage = if (isSymfonium) {
+                    "No favorites in Symfonium yet."
+                } else {
+                    "No favorites yet — tap the heart while a song plays."
+                },
+                motion = listMotion,
                 onPlay = ::play,
                 menuFor = ::menuFor,
             )
 
             LibraryTab.PLAYLISTS -> {
+                if (isSymfonium) {
+                    // Symfonium's playlists are read through its browse tree; there is no
+                    // phone-side management or drill-in for them. Tapping one plays it,
+                    // exactly like the watch's Playlists row.
+                    songItems(
+                        songs = symfoniumPlaylists,
+                        artworkUrls = artworkUrls,
+                        currentId = playing.videoId,
+                        isPlaying = isPlaying,
+                        gridMode = false,
+                        emptyMessage = "No playlists in Symfonium.",
+                        motion = listMotion,
+                        onPlay = ::play,
+                        menuFor = ::menuFor,
+                    )
+                    return@LazyColumn
+                }
                 val openId = openPlaylistId
                 if (openId == null) {
                     playlistCards(
@@ -275,12 +335,17 @@ fun LibraryScreen(viewModel: DreamwaveViewModel) {
             }
 
             LibraryTab.RECENT -> songItems(
-                songs = recent,
+                songs = if (isSymfonium) symfoniumRecent else recent,
                 artworkUrls = artworkUrls,
                 currentId = playing.videoId,
                 isPlaying = isPlaying,
                 gridMode = gridMode,
-                emptyMessage = "No play history yet.",
+                emptyMessage = if (isSymfonium) {
+                    "Nothing played in Symfonium yet."
+                } else {
+                    "No play history yet."
+                },
+                motion = listMotion,
                 onPlay = ::play,
                 menuFor = ::menuFor,
             )
@@ -418,6 +483,7 @@ private fun LazyListScope.songItems(
     isPlaying: Boolean,
     gridMode: Boolean,
     emptyMessage: String,
+    motion: ListItemMotion,
     onPlay: (String) -> Unit,
     menuFor: (String) -> List<RowMenuItem>,
 ) {
@@ -430,7 +496,13 @@ private fun LazyListScope.songItems(
         // in a LazyColumn without being given a fixed height.
         itemsIndexed(songs.chunked(2), key = { _, pair -> pair.first().videoId }) { _, pair ->
             Row(
-                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp),
+                modifier = Modifier
+                    .animateItem(
+                        fadeInSpec = motion.fade,
+                        placementSpec = motion.placement,
+                        fadeOutSpec = motion.fade,
+                    )
+                    .padding(horizontal = 16.dp).padding(bottom = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 pair.forEach { song ->
@@ -455,7 +527,15 @@ private fun LazyListScope.songItems(
                 isPlaying = isPlaying,
                 onClick = { onPlay(song.videoId) },
                 menuItems = menuFor(song.videoId),
-                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp),
+                // Sorting the library, or deleting a cached song, now slides the
+                // survivors into their new places instead of cutting to them.
+                modifier = Modifier
+                    .animateItem(
+                        fadeInSpec = motion.fade,
+                        placementSpec = motion.placement,
+                        fadeOutSpec = motion.fade,
+                    )
+                    .padding(horizontal = 16.dp).padding(bottom = 8.dp),
             )
         }
     }

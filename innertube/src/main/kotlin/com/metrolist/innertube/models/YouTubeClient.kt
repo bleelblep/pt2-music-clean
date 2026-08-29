@@ -22,6 +22,12 @@ data class YouTubeClient(
     val useSignatureTimestamp: Boolean = false,
     val isEmbedded: Boolean = false,
     val useWebPoTokens: Boolean = false,
+    /**
+     * Overrides the embedUrl sent in context.thirdParty for embedded clients.
+     * yt-dlp deliberately uses a non-YouTube URL here (their default is
+     * "https://www.reddit.com/"); null keeps the legacy watch-page URL.
+     */
+    val embedUrl: String? = null,
 ) {
     fun toContext(locale: YouTubeLocale, visitorData: String?, dataSyncId: String?) = Context(
         client = Context.Client(
@@ -48,16 +54,23 @@ data class YouTubeClient(
         const val REFERER_YOUTUBE_MUSIC = "$ORIGIN_YOUTUBE_MUSIC/"
         const val API_URL_YOUTUBE_MUSIC = "$ORIGIN_YOUTUBE_MUSIC/youtubei/v1/"
 
+        // Client versions below track yt-dlp's INNERTUBE_CLIENTS table (master as of
+        // 2026-08-18). YouTube is actively killing stale versions: android_vr <=1.65
+        // went from intermittent 403s on streams (2026.07) to fully dead (2026.08.17),
+        // and the old 21.03.x IOS/ANDROID versions now get player-OK-then-stream-403
+        // treatment. When playback breaks again, re-sync this file with
+        // yt-dlp/yt-dlp yt_dlp/extractor/youtube/_base.py first.
+
         val WEB = YouTubeClient(
             clientName = "WEB",
-            clientVersion = "2.20260213.00.00",
+            clientVersion = "2.20260708.00.00",
             clientId = "1",
             userAgent = USER_AGENT_WEB,
         )
 
         val WEB_REMIX = YouTubeClient(
             clientName = "WEB_REMIX",
-            clientVersion = "1.20260213.01.00",
+            clientVersion = "1.20260707.12.00",
             clientId = "67",
             userAgent = USER_AGENT_WEB,
             loginSupported = true,
@@ -67,7 +80,7 @@ data class YouTubeClient(
 
         val WEB_CREATOR = YouTubeClient(
             clientName = "WEB_CREATOR",
-            clientVersion = "1.20260213.00.00",
+            clientVersion = "1.20260708.06.00",
             clientId = "62",
             userAgent = USER_AGENT_WEB,
             loginSupported = true,
@@ -78,7 +91,7 @@ data class YouTubeClient(
 
         val TVHTML5 = YouTubeClient(
             clientName = "TVHTML5",
-            clientVersion = "7.20260213.00.00",
+            clientVersion = "7.20260707.07.00",
             clientId = "7",
             userAgent = "Mozilla/5.0(SMART-TV; Linux; Tizen 4.0.0.2) AppleWebkit/605.1.15 (KHTML, like Gecko) SamsungBrowser/9.2 TV Safari/605.1.15",
             loginSupported = true,
@@ -104,17 +117,23 @@ data class YouTubeClient(
 
         val IOS = YouTubeClient(
             clientName = "IOS",
-            clientVersion = "21.03.1",
+            clientVersion = "21.26.4",
             clientId = "5",
-            userAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)",
-            osVersion = "18.2.22C152",
+            userAgent = "com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+            osName = "iPhone",
+            osVersion = "18.3.2.22D82",
+            deviceMake = "Apple",
+            deviceModel = "iPhone16,2",
         )
 
         val MOBILE = YouTubeClient(
             clientName = "ANDROID",
-            clientVersion = "21.03.38",
+            clientVersion = "21.26.364",
             clientId = "3",
-            userAgent = "com.google.android.youtube/21.03.38 (Linux; U; Android 14) gzip",
+            userAgent = "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
+            osName = "Android",
+            osVersion = "11",
+            androidSdkVersion = "30",
             loginSupported = true,
             useSignatureTimestamp = true
         )
@@ -126,9 +145,9 @@ data class YouTubeClient(
          */
         val ANDROID_NO_SDK = YouTubeClient(
             clientName = "ANDROID",
-            clientVersion = "21.03.38",
+            clientVersion = "21.26.364",
             clientId = "3",
-            userAgent = "com.google.android.youtube/21.03.38 (Linux; U; Android 14) gzip",
+            userAgent = "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
             friendlyName = "Android No SDK",
             loginSupported = false,
             useSignatureTimestamp = false
@@ -210,19 +229,36 @@ data class YouTubeClient(
 
         /**
          * Internal YT client for an unreleased YT client. May stop working at any time.
+         * Currently yt-dlp's primary default client: no PO token required for streams.
          */
         val VISIONOS = YouTubeClient(
             clientName = "VISIONOS",
-            clientVersion = "0.1",
+            clientVersion = "1.02",
             clientId = "101",
-            userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+            userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
             osName = "visionOS",
-            osVersion = "1.3.21O771",
+            osVersion = "26.5.23O471",
             deviceMake = "Apple",
-            deviceModel = "RealityDevice14,1",
+            deviceModel = "RealityDevice17,1",
             friendlyName = "visionOS",
             loginSupported = false,
             useSignatureTimestamp = false
+        )
+
+        /**
+         * yt-dlp's anonymous fallback client (added 2026-08-18): no PO token required.
+         * Needs an embedUrl in context.thirdParty, handled via isEmbedded.
+         */
+        val WEB_EMBEDDED = YouTubeClient(
+            clientName = "WEB_EMBEDDED_PLAYER",
+            clientVersion = "2.20260708.00.00",
+            clientId = "56",
+            userAgent = USER_AGENT_WEB,
+            friendlyName = "Web Embedded",
+            loginSupported = true,
+            useSignatureTimestamp = true,
+            isEmbedded = true,
+            embedUrl = "https://www.reddit.com/",
         )
 
         /**
@@ -231,9 +267,9 @@ data class YouTubeClient(
          */
         val IPADOS = YouTubeClient(
             clientName = "IOS",
-            clientVersion = "21.03.3",
+            clientVersion = "21.26.4",
             clientId = "5",
-            userAgent = "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)",
+            userAgent = "com.google.ios.youtube/21.26.4 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)",
             osName = "iPadOS",
             osVersion = "17.7.10.21H450",
             deviceMake = "Apple",

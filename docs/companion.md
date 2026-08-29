@@ -1,13 +1,14 @@
 # Companion app
 
-`pebble-companion/` is a standalone Android app (`dev.pebble.musicbridge`, minSdk 26) that does the heavy lifting the watch can't: resolving and streaming YouTube Music audio, encoding cover art, and bridging it all to the watch over PebbleKit. It also has a full on-phone player UI, so it works as a music player in its own right.
+`pebble-companion/` is **music-src**, a standalone Android app (`dev.pebble.musicbridge`, minSdk 26) that does the heavy lifting the watch can't: resolving and streaming YouTube Music audio, encoding cover art, and bridging it all to the watch over PebbleKit. It also has a full on-phone player UI, so it works as a music player in its own right.
 
 ## Architecture
 
 | Piece | Role |
 |---|---|
-| **`PebbleMusicService`** | PebbleKit receiver service (`io.rebble.pebblekit2.RECEIVE_DATA_FROM_WATCH`) — the watch's front door. Routes incoming watch messages to the playback backend and answers with state. |
-| **`PebblePlaybackService`** | A Media3 `MediaSessionService` and the heart of the app: stream resolution, playback, queueing, caching, library/favorites/playlists, state publishing, and the watch audio transport. Runs as a foreground media-playback service with notification controls. |
+| **`PebbleMusicService`** | PebbleKit receiver service (`io.rebble.pebblekit2.RECEIVE_DATA_FROM_WATCH`) — the watch's front door, and the owner of the music-source setting. Routes each watch message to whichever backend is currently selected. |
+| **`PebblePlaybackService`** | A Media3 `MediaSessionService` and the heart of the YouTube source: stream resolution, playback, queueing, caching, library/favorites/playlists, state publishing, and the watch audio transport. Runs as a foreground media-playback service with notification controls. |
+| **`SymfoniumPlaybackService`** | The Symfonium source: binds Symfonium's exported `MediaBrowserService` and mirrors *its* playback to the watch, translating watch buttons into standard `Player` calls. While that source is active it also backs the phone's Search and Library screens (search plays the best match and reports the queue it built; library reads come from its browse tree). See [Music sources](#music-sources). |
 | **`PipePipeResolver`** | Resolves tracks to audio stream URLs (OkHttp + PipePipe Extractor). |
 | **`innertube/`** (module) | YouTube Music API client — search, suggestions, home/library pages, artist & song radio seeds. Taken from Metrolist (GPL-3.0). |
 | **`PebbleAudioTransport`** | The BLE channel to the watch for audio streaming. |
@@ -21,6 +22,37 @@
 - Commands cover search, play/pause/resume/stop, loop, audio route, volume, state/library requests, favorites, playlists and config sync.
 - **Route epoch**: every audio-route change bumps a monotonic counter; a route carried by any message is applied only if its epoch is newer — so the watch and phone can never fight over the route.
 - Cover art travels as sequenced chunks (sequence / total-bytes / width / height keys) and is validated and cached on both sides.
+- **Paged search** (Symfonium only): a search request may carry an offset, each result's index is then its position in the whole result list rather than in the page, and the completion carries the total. The watch keeps one search request id across the pages of a single search, which is also the key the backend holds the ranked list under — so every page is a slice of one ranking rather than of a fresh search.
+
+## Music sources
+
+One watch app, two backends. Which one serves it is a runtime setting, changeable from
+**either** end — Settings → Music source on the watch, or the source pill on the phone's
+Home screen.
+
+| Source | Backend | Audio | Library | Search |
+|---|---|---|---|---|
+| **YouTube** | `PebblePlaybackService` | Phone **or** watch speaker | Cached / favorites / playlists / history | Songs, Artist Radio, Song Radio |
+| **Symfonium** | `SymfoniumPlaybackService` | Phone only | Recently played / favourites / playlists, read from Symfonium | Songs / albums / artists |
+
+Symfonium has **no watch-speaker route**: nothing on Android lets one app pull another
+app's decoded audio, so that source always plays through Symfonium's own player. The watch
+hides Output, watch volume, the audio-quality rows, Cached Music and the two radio search
+modes while it is active, rather than offering switches that would do nothing.
+
+**Source epoch.** The source is the one genuinely two-way setting in the app. Everything
+else on the watch's Settings/Advanced menus is watch-owned and arrives via
+`commandSyncSettings`; a phone-side write to any of those is overwritten by the watch's
+next sync, which is why the phone's old settings screen was removed rather than mirrored.
+The source escapes that the same way the audio route does — a monotonic epoch. Whoever
+changes it bumps the epoch first, and a receiver applies an incoming value only if its
+epoch is newer. On an equal epoch the **watch wins**, matching the route tie-break.
+
+Known limitations of the Symfonium source: the favourite **heart never lights** (Symfonium
+exposes a toggle action but not per-track favourite state — the toggle itself works), and
+**album name** never reaches the watch because the protocol has no album key for any
+source. Media ids longer than the watch's 81-byte text buffer travel as short synthetic
+tokens (`s:<n>`) so they survive the round trip.
 
 ## Audio routes
 
@@ -47,13 +79,18 @@ Per-route quality settings (watch: Efficient/Balanced, phone: Data Saver/High) p
 3. Results are cached on disk (with pruning) so repeated tracks don't re-download or re-encode.
 4. The encoded image is chunked over PebbleKit to the watch.
 
+Under the Symfonium source the source of the image differs — artwork comes from the session's metadata (usually embedded `artworkData`, sometimes a `content://` URI on Symfonium's Auto provider) and there is no disk cache — but the rest is shared. Two rules matter there:
+
+- **The watch's Hello forces a re-send.** A relaunched watchapp holds no art while the track is unchanged, so the "already sent this one" guard has to be reset by the handshake, not by a track change.
+- **Art is chased, not awaited.** Symfonium publishes a small stand-in cover before the real one and does not reliably republish metadata once it lands, so an attempt that finds a placeholder (or fails to fetch, encode or transfer) is retried a few times under an overall deadline. Only a track that genuinely carries no artwork is recorded as settled.
+
 ## On-phone UI
 
-A full player interface, vendored from **PixelPlayer** (MIT, pinned at the last MIT-licensed commit — see `pixelplay/VENDORING.md`) and extended with dreamwave's own screens:
+A full player interface, vendored from **PixelPlayer** (MIT, pinned at the last MIT-licensed commit — see `pixelplay/VENDORING.md`) and extended with music-src's own screens:
 
 - **Home** — recent/favorites entry points and playback access.
-- **Library** — the same sections the watch shows.
-- **Search** — YouTube Music search with the three modes (song / artist radio / song radio).
+- **Library** — the same sections the watch shows. While Symfonium is the active source the sections are its own (recently played / favorites / playlists, read from its browse tree); Recently Played prefers a "recently played" smart playlist when one exists (see `SymfoniumPlaybackService.recentSongs`), falling back to the browse-tree album walk otherwise, and the watch additionally offers a "most played" smart-playlist row. The on-disk Songs tab, sorting and playlist editing are YouTube-backend features and hide.
+- **Search** — searches the active source: YouTube Music with the three modes (song / artist radio / song radio), or Symfonium's library (song / album / artist). Symfonium search is real server-side-ranked search over its offline copy of the library, via `MediaBrowserCompat.search()` — Media3's own `search()` is never called, because its legacy bridge parcels a support-library `ResultReceiver` Symfonium cannot unmarshal (it crashes Symfonium's main thread; Media3's `getItem()` is avoided for the same reason). Playback is never touched until a result is picked, and picks play through `playFromMediaId`, exactly like an Android Auto row tap.
 - **Now Playing** — the PixelPlayer expressive player sheet (squircle artwork, palette-driven colors, animated controls).
 - **Cache** — cache usage, per-track delete, clear all.
 - **Info** — about/links screen.

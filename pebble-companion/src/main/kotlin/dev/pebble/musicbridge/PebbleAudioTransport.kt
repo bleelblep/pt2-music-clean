@@ -165,13 +165,18 @@ internal class PebbleAudioTransport(
         )
     }
 
-    suspend fun sendSearchComplete(requestId: Int) {
-        sendReliably(
-            mapOf(
-                Protocol.keyCommand to PebbleDictionaryItem.Int32(Protocol.eventSearchComplete),
-                Protocol.keySearchRequestId to PebbleDictionaryItem.Int32(requestId),
-            ),
+    /**
+     * Closes a search. [total], when known, is how many matches exist behind a paged
+     * search - the watch needs it to know where the list ends. Omitted entirely for
+     * unpaged searches so the YouTube backend's messages are unchanged on the wire.
+     */
+    suspend fun sendSearchComplete(requestId: Int, total: Int? = null) {
+        val message = mutableMapOf<UInt, PebbleDictionaryItem>(
+            Protocol.keyCommand to PebbleDictionaryItem.Int32(Protocol.eventSearchComplete),
+            Protocol.keySearchRequestId to PebbleDictionaryItem.Int32(requestId),
         )
+        total?.let { message[Protocol.keySearchTotal] = PebbleDictionaryItem.Int32(it) }
+        sendReliably(message)
     }
 
     suspend fun sendSearchError(requestId: Int, status: String) {
@@ -203,12 +208,18 @@ internal class PebbleAudioTransport(
         )
     }
 
-    suspend fun sendLibraryComplete(libraryType: Int) {
+    /**
+     * [total] is the length of the whole library list, sent only for a paged request -
+     * it is what tells the watch where the list ends. Omitted for the unpaged types,
+     * where the rows it just received *are* the whole list.
+     */
+    suspend fun sendLibraryComplete(libraryType: Int, total: Int? = null) {
         sendReliably(
-            mapOf(
-                Protocol.keyCommand to PebbleDictionaryItem.Int32(Protocol.eventLibraryComplete),
-                Protocol.keyLibraryType to PebbleDictionaryItem.Int32(libraryType),
-            ),
+            buildMap {
+                put(Protocol.keyCommand, PebbleDictionaryItem.Int32(Protocol.eventLibraryComplete))
+                put(Protocol.keyLibraryType, PebbleDictionaryItem.Int32(libraryType))
+                if (total != null) put(Protocol.keyLibraryTotal, PebbleDictionaryItem.Int32(total))
+            },
         )
     }
 
@@ -300,6 +311,22 @@ internal class PebbleAudioTransport(
         title?.let { message[Protocol.keyTitle] = PebbleDictionaryItem.Text(it.toWatchText()) }
         artist?.let { message[Protocol.keyArtist] = PebbleDictionaryItem.Text(it.toWatchText()) }
         sendReliably(message)
+    }
+
+    /**
+     * Announces a phone-initiated music-source change. The watch applies it only if
+     * [epoch] is newer than the one it holds (see Protocol.keySourceEpoch), then
+     * re-handshakes - which is what repopulates its screen from the incoming backend, so
+     * nothing here has to push state as well.
+     */
+    suspend fun sendSourceChanged(source: Int, epoch: Int) {
+        sendReliably(
+            mapOf(
+                Protocol.keyCommand to PebbleDictionaryItem.Int32(Protocol.eventSourceChanged),
+                Protocol.keyConfigMusicSource to PebbleDictionaryItem.Int32(source),
+                Protocol.keySourceEpoch to PebbleDictionaryItem.Int32(epoch),
+            ),
+        )
     }
 
     suspend fun sendFavoriteState(videoId: String, isFavorite: Boolean, generation: Int) {

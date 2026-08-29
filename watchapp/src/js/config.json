@@ -1,11 +1,11 @@
 [
   {
     "type": "heading",
-    "defaultValue": "Dreamwave"
+    "defaultValue": "music-pbl"
   },
   {
     "type": "text",
-    "defaultValue": "Advanced defaults for the Dreamwave watchapp. Playback controls remain available on the watch."
+    "defaultValue": "Advanced defaults for the music-pbl watchapp. Playback controls remain available on the watch."
   },
   {
     "type": "section",
@@ -83,10 +83,16 @@
         ]
       },
       {
-        "type": "toggle",
+        "type": "select",
         "messageKey": "CONFIG_SHOW_PROGRESS",
-        "label": "Show progress bar",
-        "defaultValue": true
+        "label": "Progress bar",
+        "description": "Flick shows it on Now Playing for a few seconds, then hides it again.",
+        "defaultValue": "1",
+        "options": [
+          {"label": "Hide", "value": "0"},
+          {"label": "Show", "value": "1"},
+          {"label": "Flick to show", "value": "2"}
+        ]
       }
     ]
   },

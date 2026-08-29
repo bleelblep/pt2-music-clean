@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🌊 dreamwave
+# 🌊 pt2-music
 
 **A music player for the Pebble Time 2** — browse, search and stream YouTube Music from your wrist, with audio routed to your phone *or* the watch's own speaker.
 
@@ -11,31 +11,31 @@
 **Stock UI**
 
 <p>
-  <img src="watchapp/shot-stock-1.png" alt="dreamwave stock UI" width="180">
-  <img src="watchapp/shot-stock-2.png" alt="dreamwave stock UI" width="180">
+  <img src="watchapp/shot-stock-1.png" alt="music-pbl stock UI" width="180">
+  <img src="watchapp/shot-stock-2.png" alt="music-pbl stock UI" width="180">
 </p>
 
 **Bespoke UI**
 
 <p>
-  <img src="watchapp/shot-bespoke-1.png" alt="dreamwave bespoke UI" width="180">
-  <img src="watchapp/shot-bespoke-2.png" alt="dreamwave bespoke UI" width="180">
+  <img src="watchapp/shot-bespoke-1.png" alt="music-pbl bespoke UI" width="180">
+  <img src="watchapp/shot-bespoke-2.png" alt="music-pbl bespoke UI" width="180">
 </p>
 
 **Now Playing** *(shared by both UIs)*
 
 <p>
-  <img src="watchapp/shot-now-playing.png" alt="dreamwave now playing screen" width="180">
+  <img src="watchapp/shot-now-playing.png" alt="music-pbl now playing screen" width="180">
 </p>
 
 </div>
 
 ## How it works
 
-dreamwave is two halves that talk over Bluetooth LE via PebbleKit:
+pt2-music is two halves that talk over Bluetooth LE via PebbleKit:
 
-- **`watchapp/`** — a Pebble watchapp (C) that browses, searches and controls playback, with cover art, voice search, and an optional on-watch keyboard.
-- **`pebble-companion/`** — a standalone Android app (`dev.pebble.musicbridge`) with a full player UI that resolves and streams audio, and bridges everything to the watch.
+- **`watchapp/`** — **music-pbl**, a Pebble watchapp (C) that browses, searches and controls playback, with cover art, voice search, and an optional on-watch keyboard.
+- **`pebble-companion/`** — **music-src**, a standalone Android app (`dev.pebble.musicbridge`) with a full player UI that resolves and streams audio, and bridges everything to the watch.
 
 Audio can be routed two ways, switchable from either device:
 
@@ -62,7 +62,7 @@ A fresh install starts here. Everything is changeable in **Settings**, or **Sett
 | Setting | Default | Why |
 |---|---|---|
 | Bespoke UI | **On** | The language the app is designed in. The stock look is the fallback, not the baseline. |
-| Keyboard | **Grid** | The 3×3 swipe keyboard suits the Time 2's touchscreen; Classic is there for muscle memory. |
+| Keyboard | **Grid** | Tap a key for its middle letter, swipe toward a neighbour for the outer two — one gesture per character on the Time 2's touchscreen. T9 is the same keypad tapped phone-style instead, for anyone who would rather press twice than aim a swipe. |
 | Progress bar | **On** | Now Playing's rail and its remaining/total chips both hang off this. Turning it off is the battery-saver layout — no rail, no times, no per-second redraw. |
 | Back stops | **Off** | Backing out of Now Playing leaves the track playing, so Back is pure navigation and Home keeps its card. On restores the old teardown-on-exit behaviour. |
 | History | **20 songs** | The maximum. Recently Played is cheap and the shorter list ran out quickly. |
@@ -84,9 +84,9 @@ Cover art is no longer a setting — it is always on. It was a toggle until 0.5.
 
 | Path | What it is |
 |---|---|
-| `watchapp/` | Pebble C app, built with the Pebble SDK (targets `emery`) |
+| `watchapp/` | `music-pbl` — Pebble C app, built with the Pebble SDK (targets `emery`) |
 | `watchapp/lib/grid_keyboard/` | Self-contained 3×3 swipe keyboard for text entry |
-| `pebble-companion/` | Android companion app — playback, streaming, PebbleKit transport |
+| `pebble-companion/` | `music-src` — Android companion app: playback, streaming, PebbleKit transport |
 | `innertube/` | YouTube Music API client, from Metrolist (GPL-3.0) |
 | `watchimage-bridge/` | Go source for `watchimagebridge.aar` (cover-art encoding) |
 | `docs/` | In-depth docs: [watchapp](docs/watchapp.md), [companion](docs/companion.md) |

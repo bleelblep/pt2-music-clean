@@ -4,13 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -18,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -35,11 +29,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.pebble.musicbridge.R
 import dev.pebble.musicbridge.pixelplay.presentation.components.LocalMaterialTheme
 import dev.pebble.musicbridge.pixelplay.presentation.components.MiniPlayerHeight
-import dev.pebble.musicbridge.pixelplay.presentation.navigation.TRANSITION_DURATION
-import dev.pebble.musicbridge.pixelplay.presentation.navigation.enterTransition
-import dev.pebble.musicbridge.pixelplay.presentation.navigation.exitTransition
-import dev.pebble.musicbridge.pixelplay.presentation.navigation.popEnterTransition
-import dev.pebble.musicbridge.pixelplay.presentation.navigation.popExitTransition
 import dev.pebble.musicbridge.pixelplay.ui.theme.PixelPlayTheme
 import dev.pebble.musicbridge.ui.cache.CacheScreen
 import dev.pebble.musicbridge.ui.components.FloatingInset
@@ -55,6 +44,11 @@ import dev.pebble.musicbridge.ui.search.SearchScreen
 import dev.pebble.musicbridge.ui.appearance.AppearanceScreen
 import dev.pebble.musicbridge.ui.theme.ThemeMode
 import dev.pebble.musicbridge.ui.theme.UiPrefs
+import dev.pebble.musicbridge.ui.theme.bottomChromeEnter
+import dev.pebble.musicbridge.ui.theme.bottomChromeExit
+import dev.pebble.musicbridge.ui.theme.fadeThrough
+import dev.pebble.musicbridge.ui.theme.rememberScreenMotion
+import dev.pebble.musicbridge.ui.theme.sharedAxisX
 import dev.pebble.musicbridge.ui.theme.WatchAccent
 import dev.pebble.musicbridge.ui.theme.rememberWatchAccentScheme
 
@@ -113,12 +107,22 @@ fun DreamwaveApp(
     }
 
     PixelPlayTheme(darkTheme = darkTheme, colorSchemePairOverride = accentScheme) {
-      // No app-level motion-scheme override: upstream's chrome runs on the theme's
-      // default (tween-based) scheme, and the vendored player creates its own
-      // MotionScheme.expressive() internally where it wants springs. Screen
-      // transitions and the player sheet use vendored PixelPlayer animation code
-      // (presentation/navigation/Transitions.kt, scoped/SheetMotionController.kt).
-      run {
+      // The shell runs on Expressive motion. PixelPlayTheme is vendored and installs
+      // the default (standard) scheme, so this re-declares the theme with only the
+      // motion scheme swapped — everything else is read straight back out of it.
+      //
+      // This is what makes the app move as one thing. The vendored player already
+      // builds MotionScheme.expressive() for itself internally, so before this the
+      // shell's springs were stiffer and less bouncy than the player's, and the seam
+      // showed every time the sheet opened. Every `MaterialTheme.motionScheme` read in
+      // the app — ours and stock M3 components' alike — now resolves to the same
+      // scheme the player uses. See ui/theme/Motion.kt for the vocabulary built on it.
+      MaterialTheme(
+        colorScheme = MaterialTheme.colorScheme,
+        motionScheme = MotionScheme.expressive(),
+        shapes = MaterialTheme.shapes,
+        typography = MaterialTheme.typography,
+      ) {
         var currentTab by rememberSaveable { mutableStateOf(DreamwaveTab.HOME.name) }
         var currentSub by rememberSaveable { mutableStateOf(Subscreen.NONE.name) }
         // Safe parsing: a state restore from an older app version could name a
@@ -179,14 +183,24 @@ fun DreamwaveApp(
                     else -> systemBar
                 }
 
+                // AnimatedContent's transitionSpec is not a @Composable lambda, so it
+                // cannot read the motion scheme itself — resolve the specs out here.
+                val screenMotion = rememberScreenMotion()
+
                 Box(modifier = Modifier.fillMaxSize()) {
                     AnimatedContent(
                         targetState = tab to sub,
-                        // PixelPlayer's own navigation transitions, vendored verbatim
-                        // (presentation/navigation/Transitions.kt): emphasized-curve
-                        // slide + scale + fade. Pushing a subscreen is a forward
-                        // navigation; popping it — or going back to Home from another
-                        // tab — is the pop pair.
+                        // Two different relationships, so two different transitions.
+                        //
+                        // Pushing or popping a subscreen is *hierarchical* — the new
+                        // screen came from somewhere — so it gets shared-axis X, which
+                        // carries a direction. Moving between tabs is not: the three
+                        // tabs are peers, and sliding between them invents a left-right
+                        // ordering the nav bar does not actually promise. Those cross
+                        // fade through instead.
+                        //
+                        // The one exception is tab -> Home, which the back gesture
+                        // produces; that *is* a pop, so it reads as one.
                         transitionSpec = {
                             val pushing = targetState.second != Subscreen.NONE
                             val popping = initialState.second != Subscreen.NONE &&
@@ -194,12 +208,10 @@ fun DreamwaveApp(
                             val backToHome = !pushing && !popping &&
                                 initialState.first != DreamwaveTab.HOME &&
                                 targetState.first == DreamwaveTab.HOME
-                            if (pushing) {
-                                enterTransition() togetherWith exitTransition()
-                            } else if (popping || backToHome) {
-                                popEnterTransition() togetherWith popExitTransition()
-                            } else {
-                                enterTransition() togetherWith exitTransition()
+                            when {
+                                pushing -> sharedAxisX(screenMotion, forward = true)
+                                popping || backToHome -> sharedAxisX(screenMotion, forward = false)
+                                else -> fadeThrough(screenMotion)
                             }
                         },
                         label = "screen",
@@ -251,15 +263,11 @@ fun DreamwaveApp(
                     }
 
                     // Hidden while the player is open, so the full player owns the
-                    // screen the way it does upstream. Specs mirror the vendored
-                    // Transitions.kt (350 ms, FastOutSlowInEasing) rather than reading
-                    // the ambient motion scheme.
+                    // screen the way it does upstream.
                     AnimatedVisibility(
                         visible = navBarVisible && !expanded,
-                        enter = slideInVertically(tween(TRANSITION_DURATION, easing = FastOutSlowInEasing)) { it } +
-                            fadeIn(tween(TRANSITION_DURATION, easing = FastOutSlowInEasing)),
-                        exit = slideOutVertically(tween(TRANSITION_DURATION / 2, easing = FastOutSlowInEasing)) { it } +
-                            fadeOut(tween(TRANSITION_DURATION / 2, easing = FastOutSlowInEasing)),
+                        enter = bottomChromeEnter(),
+                        exit = bottomChromeExit(),
                         modifier = Modifier.align(Alignment.BottomCenter),
                     ) {
                         FloatingNavBar(

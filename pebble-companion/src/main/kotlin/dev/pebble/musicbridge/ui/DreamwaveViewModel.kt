@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.pebble.musicbridge.CacheUiState
+import dev.pebble.musicbridge.MusicSourcePrefs
 import dev.pebble.musicbridge.PlaybackConnection
 import dev.pebble.musicbridge.PlaybackPrefs
 import dev.pebble.musicbridge.PlaybackUiState
@@ -11,16 +12,22 @@ import dev.pebble.musicbridge.PlaylistInfo
 import dev.pebble.musicbridge.Protocol
 import dev.pebble.musicbridge.SearchResultItem
 import dev.pebble.musicbridge.SettingsUiState
+import dev.pebble.musicbridge.SourceConnection
 import dev.pebble.musicbridge.UiCommand
 import dev.pebble.musicbridge.ui.theme.ThemeMode
 import dev.pebble.musicbridge.ui.theme.UiPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -30,8 +37,29 @@ import kotlinx.coroutines.launch
 class DreamwaveViewModel(application: Application) : AndroidViewModel(application) {
 
     private val connection = PlaybackConnection(application)
+    private val sourceConnection = SourceConnection(application)
 
     val service = connection.service
+
+    /**
+     * Which backend is serving the watch. Two-way: changing it here reaches the watch, and
+     * changing it on the watch lands back here. Seeded synchronously so the first frame
+     * shows the right source instead of flashing YouTube while the binding completes.
+     */
+    private val _musicSource = MutableStateFlow(MusicSourcePrefs.source(application))
+    val musicSource: StateFlow<Int> = _musicSource.asStateFlow()
+
+    val isSymfonium: StateFlow<Boolean> = _musicSource
+        .map { it == Protocol.sourceSymfonium }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, MusicSourcePrefs.isSymfonium(application))
+
+    fun setMusicSource(source: Int) {
+        if (source == _musicSource.value) return
+        // Optimistic: the service is the authority, and its own flow corrects this if the
+        // change is refused, but the toggle should not sit still while it round-trips.
+        _musicSource.value = source
+        sourceConnection.service.value?.setMusicSource(source)
+    }
 
     /** Synchronously-read theme index so the first frame has the right accent. */
     val initialTheme: Int = PlaybackPrefs.themeIndex(application)
@@ -96,6 +124,21 @@ class DreamwaveViewModel(application: Application) : AndroidViewModel(applicatio
     private val _playlists = MutableStateFlow<List<PlaylistInfo>>(emptyList())
     val playlists: StateFlow<List<PlaylistInfo>> = _playlists.asStateFlow()
 
+    /**
+     * Symfonium's own library, for the Search/Library screens while that source is
+     * active. These mirror exactly the three lists the watch can pull (recently
+     * played, favorites, playlists); the YouTube-shaped flows above are meaningless
+     * for this source since Symfonium owns the library.
+     */
+    private val _symfoniumRecent = MutableStateFlow<List<SearchResultItem>>(emptyList())
+    val symfoniumRecent: StateFlow<List<SearchResultItem>> = _symfoniumRecent.asStateFlow()
+
+    private val _symfoniumFavorites = MutableStateFlow<List<SearchResultItem>>(emptyList())
+    val symfoniumFavorites: StateFlow<List<SearchResultItem>> = _symfoniumFavorites.asStateFlow()
+
+    private val _symfoniumPlaylists = MutableStateFlow<List<SearchResultItem>>(emptyList())
+    val symfoniumPlaylists: StateFlow<List<SearchResultItem>> = _symfoniumPlaylists.asStateFlow()
+
     /** Songs of the playlist currently open in the Library detail subscreen. */
     private val _playlistSongs = MutableStateFlow<List<SearchResultItem>>(emptyList())
     val playlistSongs: StateFlow<List<SearchResultItem>> = _playlistSongs.asStateFlow()
@@ -159,6 +202,23 @@ class DreamwaveViewModel(application: Application) : AndroidViewModel(applicatio
 
     init {
         connection.bind()
+        sourceConnection.bind()
+        // The source can change from either end; this is the one place that learns about
+        // both, since the service applies the epoch rule for watch-initiated changes.
+        viewModelScope.launch {
+            sourceConnection.service.collect { svc ->
+                if (svc != null) launch { svc.musicSource.collect { _musicSource.value = it } }
+            }
+        }
+        // While Symfonium is the active source the phone mirrors ITS player. Read-only:
+        // the transport controls stay disabled because Symfonium's own app owns them.
+        viewModelScope.launch {
+            _musicSource.collectLatest { source ->
+                if (source != Protocol.sourceSymfonium) return@collectLatest
+                val svc = sourceConnection.service.value ?: return@collectLatest
+                svc.symfoniumState()?.collect { _uiState.value = it }
+            }
+        }
         viewModelScope.launch {
             connection.service.collect { svc ->
                 serviceCollectors?.cancel()
@@ -173,7 +233,14 @@ class DreamwaveViewModel(application: Application) : AndroidViewModel(applicatio
                     refreshFavorites()
                     refreshPlaylists()
                     serviceCollectors = launch {
-                        launch { svc.uiState.collect { _uiState.value = it } }
+                        // Guarded: this backend is stopped while Symfonium is the source,
+                        // and its idle state would otherwise overwrite what Symfonium is
+                        // actually playing.
+                        launch {
+                            svc.uiState.collect {
+                                if (_musicSource.value != Protocol.sourceSymfonium) _uiState.value = it
+                            }
+                        }
                         launch { svc.errors.collect { _errorMessage.value = it } }
                         launch { svc.positionFlow().collect { _position.value = it } }
                     }
@@ -185,6 +252,16 @@ class DreamwaveViewModel(application: Application) : AndroidViewModel(applicatio
             _uiState.map { it.videoId }.distinctUntilChanged().collect { videoId ->
                 if (videoId == null) {
                     _artworkUrl.value = null
+                    _queue.value = emptyList()
+                    return@collect
+                }
+                // Symfonium supplies its own artwork with the metadata, when it supplies one
+                // at all (often it hands over raw bytes instead, which cannot be a URI). The
+                // resolver below is a YouTube cover-URL lookup keyed by videoId and would
+                // both fail and mislead on a Symfonium media id, so this source never enters
+                // it — a missing cover stays missing rather than becoming a wrong one.
+                if (_musicSource.value == Protocol.sourceSymfonium) {
+                    _artworkUrl.value = _uiState.value.artworkUri
                     _queue.value = emptyList()
                     return@collect
                 }
@@ -266,9 +343,8 @@ class DreamwaveViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Runs the query against the same resolver the watch uses, in the current
-     * [searchMode]. Cancels any search already running, so typing quickly cannot let
-     * an older, slower response land on top of a newer one.
+     * Runs the query against the active source. Cancels any search already running, so
+     * typing quickly cannot let an older, slower response land on top of a newer one.
      */
     fun submitSearch() {
         val query = _searchQuery.value.trim()
@@ -276,6 +352,26 @@ class DreamwaveViewModel(application: Application) : AndroidViewModel(applicatio
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             _searching.value = true
+            if (_musicSource.value == Protocol.sourceSymfonium) {
+                // Symfonium answers real ranked searches without touching playback (see
+                // SymfoniumPlaybackService.searchLibrary) - the list arrives first, and
+                // only the picked row plays. Radio modes are a YouTube feature, so the
+                // mode is ignored here.
+                val backend = runCatching {
+                    sourceConnection.service.filterNotNull().first().symfoniumBackend()
+                }.getOrNull()
+                if (backend == null) {
+                    _errorMessage.value = "Can't reach Symfonium"
+                } else {
+                    runCatching { backend.searchForUi(query, searchMode = _searchMode.value) }
+                        .onSuccess { _searchResults.value = it }
+                        .onFailure {
+                            _errorMessage.value = "Search failed: ${it.message ?: "unknown error"}"
+                        }
+                }
+                _searching.value = false
+                return@launch
+            }
             val svc = connection.service.value
             if (svc == null) {
                 _errorMessage.value = "Not connected to playback service"
@@ -291,6 +387,39 @@ class DreamwaveViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 .onFailure { _errorMessage.value = "Search failed: ${it.message ?: "unknown error"}" }
             _searching.value = false
+        }
+    }
+
+    /** Loads Symfonium's own library lists for the Library screen. */
+    fun refreshSymfoniumLibrary() {
+        viewModelScope.launch {
+            // filterNotNull().first() waits out the bind: the screen composes before the
+            // source service is up, and a one-shot value read would leave the lists
+            // empty until the tab was revisited.
+            val backend = runCatching {
+                sourceConnection.service.filterNotNull().first().symfoniumBackend()
+            }.getOrNull() ?: return@launch
+            _symfoniumRecent.value = backend.libraryForUi(Protocol.libraryRecent)
+            _symfoniumFavorites.value = backend.libraryForUi(Protocol.libraryFavorites)
+            _symfoniumPlaylists.value = backend.libraryForUi(Protocol.libraryPlaylists)
+        }
+    }
+
+    /**
+     * Plays a listed track (search result, library row) through whichever backend is
+     * active. Under Symfonium the id is that backend's wire id and playing means telling
+     * Symfonium itself; under YouTube it is the resolver/stream path as before.
+     */
+    fun playFromActiveSource(videoId: String) {
+        if (_musicSource.value == Protocol.sourceSymfonium) {
+            viewModelScope.launch {
+                runCatching {
+                    sourceConnection.service.filterNotNull().first().symfoniumBackend()
+                        ?.playFromUi(videoId)
+                }
+            }
+        } else {
+            sendCommand(UiCommand.Play(videoId))
         }
     }
 
@@ -465,6 +594,7 @@ class DreamwaveViewModel(application: Application) : AndroidViewModel(applicatio
 
     override fun onCleared() {
         connection.unbind()
+        sourceConnection.unbind()
         super.onCleared()
     }
 }

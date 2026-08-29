@@ -2,6 +2,7 @@ package dev.pebble.musicbridge.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -35,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.painterResource
@@ -44,6 +46,8 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import dev.pebble.musicbridge.R
 import dev.pebble.musicbridge.pixelplay.presentation.components.subcomps.PlayingEqIcon
+import dev.pebble.musicbridge.ui.theme.Motion
+import dev.pebble.musicbridge.ui.theme.pressBounce
 
 /**
  * PixelPlayer's chrome vocabulary — the parts every screen is assembled from.
@@ -72,12 +76,14 @@ fun CircleIconButton(
     container: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
+            .pressBounce(interactionSource, pressedScale = 0.88f)
             .size(size)
             .clip(CircleShape)
             .background(container)
-            .clickable(onClick = onClick),
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -103,11 +109,27 @@ fun StatusPill(
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     onClick: (() -> Unit)? = null,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Row(
         modifier = modifier
+            // Applied unconditionally: without a `clickable` feeding it, the source
+            // never emits a press and the scale stays pinned at 1. Making it
+            // conditional would put an `animateFloatAsState` behind a branch, which is
+            // how you lose a remember slot when the branch flips.
+            .pressBounce(interactionSource, pressedScale = 0.94f)
             .clip(CircleShape)
             .background(container)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick,
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -143,19 +165,32 @@ fun CategoryChip(
     val scheme = MaterialTheme.colorScheme
     val container by animateColorAsState(
         targetValue = if (selected) scheme.primary else scheme.surfaceContainerHigh,
-        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+        animationSpec = Motion.effects(),
         label = "chipContainer",
     )
     val content by animateColorAsState(
         targetValue = if (selected) scheme.onPrimary else scheme.onSurface,
-        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+        animationSpec = Motion.effects(),
         label = "chipContent",
     )
+    // Selecting a chip pops it fractionally proud of its unselected neighbours, so
+    // the accent fill is not the only thing distinguishing them.
+    val selectedScale by animateFloatAsState(
+        targetValue = if (selected) 1.05f else 1f,
+        animationSpec = Motion.spatialDefault,
+        label = "chipScale",
+    )
+    val interactionSource = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = selectedScale
+                scaleY = selectedScale
+            }
+            .pressBounce(interactionSource, pressedScale = 0.94f)
             .clip(CircleShape)
             .background(container)
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(horizontal = 26.dp, vertical = 13.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -180,11 +215,13 @@ fun PillButton(
     container: Color = MaterialTheme.colorScheme.tertiaryContainer,
     contentColor: Color = MaterialTheme.colorScheme.onTertiaryContainer,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Row(
         modifier = modifier
+            .pressBounce(interactionSource, pressedScale = 0.94f)
             .clip(CircleShape)
             .background(container)
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(horizontal = 22.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -229,23 +266,27 @@ fun SongRow(
     val scheme = MaterialTheme.colorScheme
     val container by animateColorAsState(
         targetValue = if (isCurrent) scheme.primaryContainer else scheme.surfaceContainer,
-        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+        animationSpec = Motion.effects(),
         label = "rowContainer",
     )
+    // Spatial: the corner sweeping out to a full pill is the shape change that makes
+    // the playing row findable in a flicked scroll, and it overshoots on purpose.
     val corner by animateDpAsState(
         targetValue = if (isCurrent) 40.dp else 18.dp,
-        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+        animationSpec = Motion.spatial(),
         label = "rowCorner",
     )
     val onContainer = if (isCurrent) scheme.onPrimaryContainer else scheme.onSurface
     val dim = if (isCurrent) scheme.onPrimaryContainer.copy(alpha = 0.72f) else scheme.onSurfaceVariant
+    val interactionSource = remember { MutableInteractionSource() }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .pressBounce(interactionSource, pressedScale = 0.975f)
             .clip(SquircleShape(corner))
             .background(container)
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -449,28 +490,46 @@ fun FloatingNavBar(
     ) {
         items.forEachIndexed { index, item ->
             val selected = index == selectedIndex
+            // Colour is an effect — critically damped, no overshoot.
             val indicator by animateColorAsState(
                 targetValue = if (selected) scheme.secondaryContainer else Color.Transparent,
-                animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+                animationSpec = Motion.effects(),
                 label = "navIndicator",
             )
             val content by animateColorAsState(
                 targetValue = if (selected) scheme.primary else scheme.onSurfaceVariant,
-                animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+                animationSpec = Motion.effects(),
                 label = "navContent",
             )
+            // Width is spatial, so it overshoots: the pill snaps wide and settles
+            // back a hair. A cross-fading indicator alone reads as a light switching
+            // on somewhere; growing the shape is what makes the selection feel like
+            // it landed where you tapped.
+            val indicatorWidth by animateDpAsState(
+                targetValue = if (selected) 58.dp else 32.dp,
+                animationSpec = Motion.spatial(),
+                label = "navIndicatorWidth",
+            )
+            // The icon rides the same spring a beat behind the pill.
+            val iconScale by animateFloatAsState(
+                targetValue = if (selected) 1.12f else 1f,
+                animationSpec = Motion.spatialFast,
+                label = "navIconScale",
+            )
+            val interactionSource = remember { MutableInteractionSource() }
             Column(
                 modifier = Modifier
                     .weight(1f)
+                    .pressBounce(interactionSource, pressedScale = 0.9f)
                     .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
+                        interactionSource = interactionSource,
                         indication = null,
                     ) { onSelect(index) },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
                     modifier = Modifier
-                        .width(58.dp)
+                        .width(indicatorWidth)
                         .height(32.dp)
                         .clip(CircleShape)
                         .background(indicator),
@@ -480,7 +539,12 @@ fun FloatingNavBar(
                         painter = painterResource(item.icon),
                         contentDescription = item.label,
                         tint = content,
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier
+                            .size(22.dp)
+                            .graphicsLayer {
+                                scaleX = iconScale
+                                scaleY = iconScale
+                            },
                     )
                 }
                 Spacer(Modifier.height(4.dp))
@@ -504,3 +568,30 @@ val FloatingNavBarHeight: Dp = 72.dp
 
 /** Horizontal inset every floating element shares — nav bar, mini player, dialogs. */
 val FloatingInset: Dp = 16.dp
+
+/**
+ * Says a screen's contents belong to the other music source.
+ *
+ * The Library, Search and Cache screens are built on the YouTube backend's own history,
+ * resolver and disk cache. When Symfonium is the active source those stores are still
+ * populated but no longer describe what the watch is playing, so showing them unmarked
+ * would be showing stale data as if it were live. Saying so is cheaper — and more honest —
+ * than either hiding the screens or faking their contents from Symfonium's library.
+ */
+@Composable
+fun SourceNotice(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(SquircleShape(20.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+    }
+}

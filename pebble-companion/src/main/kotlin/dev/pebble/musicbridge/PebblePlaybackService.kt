@@ -29,6 +29,7 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.cache.ContentMetadata
@@ -78,7 +79,7 @@ import org.json.JSONObject
 import java.io.File
 
 @androidx.annotation.OptIn(UnstableApi::class)
-class PebblePlaybackService : MediaSessionService() {
+class PebblePlaybackService : MediaSessionService(), MusicBackend {
     inner class LocalBinder : Binder() {
         val service: PebblePlaybackService
             get() = this@PebblePlaybackService
@@ -246,7 +247,7 @@ class PebblePlaybackService : MediaSessionService() {
             cacheSizeMb = getInt(KEY_CACHE_SIZE_MB, DEFAULT_CACHE_SIZE_MB).coerceIn(MIN_CACHE_SIZE_MB, MAX_CACHE_SIZE_MB)
             loopMode = getInt(KEY_LOOP_MODE, LoopModeOff).coerceIn(LoopModeOff, LoopModeAll)
             coverArtBackground = getBoolean(KEY_COVER_ART_BG, true)
-            watchTheme = getInt(KEY_THEME, ThemeDefault).coerceIn(ThemeTeal, ThemeArcade)
+            watchTheme = getInt(KEY_THEME, ThemeDefault).coerceIn(ThemeTeal, ThemeDefaultDark)
             watchAudioQuality = getBoolean(KEY_WATCH_AUDIO_QUALITY, true)
             phoneAudioQuality = getBoolean(KEY_PHONE_AUDIO_QUALITY, true)
             cacheRadioEnabled = getBoolean(KEY_CACHE_RADIO, true)
@@ -264,11 +265,39 @@ class PebblePlaybackService : MediaSessionService() {
         }
         val pcmProcessor = PebblePcmAudioProcessor(transport::offer)
         mediaCache = openMediaCache()
+        // Media3's own DefaultHttpDataSource gets a flat 403 from googlevideo on stream
+        // URLs that streamValidator - a plain OkHttpClient - reads 256 KB from moments
+        // earlier. Same URL, same UA, same device, opposite results, so the difference is
+        // in how the two stacks frame the request rather than in the URL. Rather than keep
+        // guessing which header googlevideo objects to, playback now goes through the
+        // exact client that is known to work.
+        // Same OkHttpClient that reads 256 KB from these URLs in validateStream() still
+        // got a 403 through OkHttpDataSource, so the client was never the variable - the
+        // request shape is. The one thing validateStream() does differently is send a
+        // Range header; Media3 omits it entirely when it wants a whole file from offset 0
+        // (position 0 + unknown length = no header), and these URLs carry sig+lsig+expire
+        // but no ratebypass, which is exactly the case googlevideo refuses to serve
+        // unranged. The interceptor only fills in a Range when Media3 has not set one, so
+        // seeks and chunked cache reads keep their own.
+        val rangedClient = streamValidator.newBuilder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                val ranged = if (request.header("Range") == null) {
+                    request.newBuilder().header("Range", "bytes=0-").build()
+                } else {
+                    request
+                }
+                chain.proceed(ranged)
+            }
+            .build()
+        val httpDataSourceFactory = OkHttpDataSource.Factory(rangedClient)
+            .setUserAgent(STREAM_USER_AGENT)
         cacheDataSourceFactory = CacheDataSource.Factory()
             .setCache(mediaCache)
-            .setUpstreamDataSourceFactory(DefaultDataSource.Factory(this))
+            .setUpstreamDataSourceFactory(DefaultDataSource.Factory(this, httpDataSourceFactory))
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        uncachedMediaSourceFactory = DefaultMediaSourceFactory(DefaultDataSource.Factory(this))
+        uncachedMediaSourceFactory =
+            DefaultMediaSourceFactory(DefaultDataSource.Factory(this, httpDataSourceFactory))
         player = ExoPlayer.Builder(this)
             .setRenderersFactory(PcmRenderersFactory(this, pcmProcessor))
             .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
@@ -542,7 +571,7 @@ class PebblePlaybackService : MediaSessionService() {
             }
             ensureForegroundChannel()
             val metadata = player.mediaMetadata
-            val title = metadata.title?.toString() ?: activeTitle ?: "dreamwave"
+            val title = metadata.title?.toString() ?: activeTitle ?: "music-src"
             val artist = metadata.artist?.toString() ?: activeArtist
             val notification = Notification.Builder(this, notificationProvider.channelId)
                 .setContentTitle(title)
@@ -602,7 +631,22 @@ class PebblePlaybackService : MediaSessionService() {
     override fun onBind(intent: Intent?): IBinder? =
         if (intent?.action == ACTION_LOCAL_BIND) localBinder else super.onBind(intent)
 
-    suspend fun onWatchMessage(data: PebbleDictionary): ReceiveResult {
+    /**
+     * Handing the watch over to the Symfonium backend. Stopping is enough to clear the
+     * watch's screen - stopPlayback() already sends a cover-art clear and a fresh snapshot -
+     * but the media notification has to go too, or the phone shows a dead dreamwave
+     * transport next to Symfonium's live one.
+     */
+    override suspend fun onSourceDeactivated() {
+        stopPlayback()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+    }
+
+    override suspend fun announceSourceChange(source: Int, epoch: Int) {
+        transport.sendSourceChanged(source, epoch)
+    }
+
+    override suspend fun onWatchMessage(data: PebbleDictionary): ReceiveResult {
         val command = (data[Protocol.keyCommand] as? PebbleDictionaryItem.Int32)?.value ?: return ReceiveResult.Nack
         Log.i("PT2Music", "Watch command received: $command")
         // For commands that (re)start playback, promote to a foreground service NOW,
@@ -1201,11 +1245,24 @@ class PebblePlaybackService : MediaSessionService() {
         }
 
         Log.w("PT2Music", "Extractors failed; trying Innertube clients")
+        // Anonymous-capable clients only, ordered after yt-dlp's current defaults
+        // (master, 2026-08-18): visionos first - no PO token required for its streams,
+        // and it is the client YouTube is currently leaving alone. web_embedded is
+        // yt-dlp's new fallback, also POT-free (its embedUrl goes out via isEmbedded).
+        // ANDROID_NO_SDK and IOS resolved OK in testing, but their HTTPS streams are
+        // under rolling POT enforcement (player says OK, googlevideo then 403s the
+        // fetch), so they sit behind the two POT-free clients. ANDROID_VR is gone:
+        // YouTube 403s every format on it since 2026-08-17 (LOGIN_REQUIRED at the
+        // player call anyway). Clients with useWebPoTokens stay out - we never mint
+        // a token, so they are guaranteed failures.
         val fallbackClients = listOf(
             YouTubeClient.VISIONOS,
-            YouTubeClient.WEB_CREATOR,
-            YouTubeClient.TVHTML5,
-            YouTubeClient.ANDROID_VR_NO_AUTH,
+            YouTubeClient.WEB_EMBEDDED,
+            YouTubeClient.ANDROID_NO_SDK,
+            YouTubeClient.IOS,
+            YouTubeClient.IPADOS,
+            YouTubeClient.TVHTML5_SIMPLY_EMBEDDED_PLAYER,
+            YouTubeClient.ANDROID_CREATOR,
             YouTubeClient.WEB,
         )
         for (client in fallbackClients) {
@@ -1253,18 +1310,46 @@ class PebblePlaybackService : MediaSessionService() {
         return null
     }
 
+    /**
+     * Which of googlevideo's gating parameters a candidate URL actually carries. `pot` is
+     * the PO token: if working URLs turn out to need it and ours never have it, no amount
+     * of client-shuffling will fix playback and the WebView token path is the real answer.
+     */
+    private fun describeStreamUrl(url: String): String {
+        val flags = listOf("pot", "n", "sig", "lsig", "ratebypass", "expire")
+            .filter { url.contains("&$it=") || url.contains("?$it=") }
+        val host = runCatching { java.net.URI(url).host }.getOrNull() ?: "?"
+        return "host=$host params=${if (flags.isEmpty()) "none" else flags.joinToString("+")}"
+    }
+
     private suspend fun validateStream(url: String, source: String): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             streamValidator.newCall(
                 Request.Builder()
                     .url(url)
-                    .header("Range", "bytes=0-1")
-                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36")
+                    // A 2-byte probe is worthless here: googlevideo serves the opening
+                    // sliver of a URL it will still 403 for a real read, so the check
+                    // passed and playback then died with 403. Pulling an actual buffer's
+                    // worth makes a bad URL fail here instead, which lets the client loop
+                    // move on to the next candidate rather than committing to a dud.
+                    .header("Range", "bytes=0-262143")
+                    .header("User-Agent", STREAM_USER_AGENT)
                     .get()
                     .build(),
             ).execute().use { response ->
-                val valid = response.isSuccessful || response.code == 206
-                Log.i("PT2Music", "$source stream check HTTP ${response.code}")
+                // Reading the body is the point - the response code alone can be 206 on a
+                // URL whose transfer then fails.
+                val read = if (response.isSuccessful || response.code == 206) {
+                    response.body?.bytes()?.size ?: 0
+                } else {
+                    0
+                }
+                val valid = read > 0
+                Log.i(
+                    "PT2Music",
+                    "$source stream check HTTP ${response.code} read=$read " +
+                        "[${describeStreamUrl(url)}]",
+                )
                 valid
             }
         }.onFailure {
@@ -2616,7 +2701,7 @@ class PebblePlaybackService : MediaSessionService() {
         val coverArtToggled = coverArtBackgroundConfig != null &&
             (coverArtBackgroundConfig != 0) != coverArtBackground
         coverArtBackgroundConfig?.let { coverArtBackground = it != 0 }
-        themeConfig?.let { watchTheme = it.coerceIn(ThemeTeal, ThemeArcade) }
+        themeConfig?.let { watchTheme = it.coerceIn(ThemeTeal, ThemeDefaultDark) }
         cacheSizeConfig?.let {
             var mb = it.coerceIn(MIN_CACHE_SIZE_MB, MAX_CACHE_SIZE_MB)
             mb = (mb / CACHE_SIZE_STEP_MB) * CACHE_SIZE_STEP_MB
@@ -2954,8 +3039,10 @@ class PebblePlaybackService : MediaSessionService() {
         // Keep more recent searches on disk than we typically display so the watch's
         // configurable display length can grow without discarding history.
         private const val RECENT_SEARCHES_STORE = 30
-        // Hard upper bound on library entries sent to the watch. Must match the
-        // watch's MAX_LIBRARY so the watch never drops entries it asked for.
+        // Hard upper bound on library entries sent to the watch. Deliberately 60 even
+        // though the watch's MAX_LIBRARY grew to 100 for Symfonium's History grid:
+        // this backend's own history is 25 deep, so nothing here could fill the extra
+        // rows anyway.
         private const val LIBRARY_HARD_CAP = 60
         // Upper bound on queue entries sent to the watch (matches watch MAX_LIBRARY,
         // since the Queue screen reuses the watch's shared results array).
@@ -3028,6 +3115,11 @@ class PebblePlaybackService : MediaSessionService() {
         // drawn at a few hundred px at most; decoding the full 720 costs ~2 MB per track.
         private const val NOTIFICATION_ARTWORK_DIM = 512
         private const val COVER_CACHE_DIR = "dreamwave_cover_cache"
+
+        // Sent by both validateStream() and the ExoPlayer HTTP stack. googlevideo 403s
+        // Media3's default agent, so every request for a stream URL has to carry this one.
+        private const val STREAM_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36"
         // Encoded payloads run from 512 B (64x64 mono) to ~20 KB (144x144 colour), so this
         // budget holds on the order of a thousand covers while staying negligible next to
         // even the 100 MB minimum audio cache.
@@ -3042,6 +3134,12 @@ class PebblePlaybackService : MediaSessionService() {
         private const val ThemeDefault = 3
         private const val ThemeMono = 4
         private const val ThemeArcade = 5
+        // The neutral pair the watch now defaults to. Only ThemeMono changes anything on
+        // this side (it selects the mono cover-art encoder), but the accepted range still
+        // has to cover every value the watch can send - otherwise the coerceIn below
+        // silently rewrites Default Dark into Arcade.
+        private const val ThemeDefaultLight = 6
+        private const val ThemeDefaultDark = 7
     }
 
     /**

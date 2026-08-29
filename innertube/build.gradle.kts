@@ -29,9 +29,7 @@ dependencies {
     implementation(libs.ktor.serialization.json)
     implementation(libs.ktor.client.encoding)
     implementation(libs.brotli)
-    implementation("com.github.maxrave-dev:BravePipeExtractor:v0.26.3") {
-        exclude(group = "com.google.protobuf")
-    }
+    implementation(libs.pipepipe.extractor)
     implementation(libs.timber)
     testImplementation(libs.junit)
 

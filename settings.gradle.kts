@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "dreamwave"
+rootProject.name = "music-src"
 include(":pebble-companion")
 include(":innertube")

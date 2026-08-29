@@ -1,5 +1,6 @@
 package dev.pebble.musicbridge.ui.search
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,8 +25,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -56,18 +58,28 @@ import dev.pebble.musicbridge.ui.components.RowMenuItem
 import dev.pebble.musicbridge.ui.components.LocalFloatingChromeInset
 import dev.pebble.musicbridge.ui.components.ScreenHeader
 import dev.pebble.musicbridge.ui.components.SongRow
+import dev.pebble.musicbridge.ui.theme.fadeThrough
+import dev.pebble.musicbridge.ui.theme.rememberListItemMotion
+import dev.pebble.musicbridge.ui.theme.rememberScreenMotion
+
+/** The three peer states the results area can be in. See the `AnimatedContent` below. */
+private enum class SearchPhase { SEARCHING, EMPTY, RESULTS }
 
 /**
- * Search, over the same YouTube Music / PipePipe resolver the watch uses.
+ * Search, over whichever source is active: the YouTube Music / PipePipe resolver
+ * normally, Symfonium's own library while that source is selected.
  *
  * It is its own tab rather than a button inside Library, because that is where
  * upstream puts it and because searching is a mode you enter, not an action you
  * take from somewhere else. Cached hits come first and are labelled: anything
- * already on disk plays instantly and costs no data.
+ * already on disk plays instantly and costs no data. The cache shelf and the radio
+ * modes are YouTube-backend concepts, so both hide while Symfonium is active.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SearchScreen(viewModel: DreamwaveViewModel) {
     val query by viewModel.searchQuery.collectAsState()
+    val isSymfonium by viewModel.isSymfonium.collectAsState()
     val results by viewModel.searchResults.collectAsState()
     val cached by viewModel.cachedMatches.collectAsState()
     val searching by viewModel.searching.collectAsState()
@@ -98,23 +110,29 @@ fun SearchScreen(viewModel: DreamwaveViewModel) {
 
         Spacer(Modifier.height(12.dp))
 
-        // The same three modes the watch offers, over the same protocol values:
-        // songs, an artist to shuffle (Artist Radio), or a song that seeds a radio
-        // queue (Song Radio). Radio results play as queues, not single tracks.
-        // Horizontally scrollable (the library chips' idiom) so the labels never
-        // clip on narrow screens.
+        // Search modes, over the same protocol values the watch uses. YouTube offers
+        // songs plus the two radio modes (endless queues from a seed); Symfonium
+        // searches its local library as songs, albums, or artists. Horizontally
+        // scrollable (the library chips' idiom) so the labels never clip on narrow
+        // screens.
+        val modes = if (isSymfonium) {
+            listOf(
+                Protocol.searchModeSong to "Songs",
+                Protocol.searchModeAlbum to "Albums",
+                Protocol.searchModeArtist to "Artists",
+            )
+        } else {
+            listOf(
+                Protocol.searchModeSong to "Songs",
+                Protocol.searchModeArtist to "Artist Radio",
+                Protocol.searchModeSongRadio to "Song Radio",
+            )
+        }
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(
-                listOf(
-                    Protocol.searchModeSong to "Songs",
-                    Protocol.searchModeArtist to "Artist Radio",
-                    Protocol.searchModeSongRadio to "Song Radio",
-                ),
-                key = { it.first },
-            ) { (mode, label) ->
+            items(modes, key = { it.first }) { (mode, label) ->
                 CategoryChip(
                     label = label,
                     selected = searchMode == mode,
@@ -125,26 +143,49 @@ fun SearchScreen(viewModel: DreamwaveViewModel) {
 
         Spacer(Modifier.height(14.dp))
 
-        when {
-            searching -> Box(
+        // Searching, nothing-to-show and results are three peer states with no spatial
+        // relationship, so they fade through into each other rather than cutting. The
+        // spinner appearing and the list replacing it used to be two hard swaps in a
+        // row, which is what made a search feel like the screen flickered.
+        val showCached = !isSymfonium && cached.isNotEmpty() && searchMode == Protocol.searchModeSong
+        val resultsPhase = when {
+            searching -> SearchPhase.SEARCHING
+            results.isEmpty() && !showCached -> SearchPhase.EMPTY
+            else -> SearchPhase.RESULTS
+        }
+        val screenMotion = rememberScreenMotion()
+        val listMotion = rememberListItemMotion()
+        AnimatedContent(
+            targetState = resultsPhase,
+            transitionSpec = { fadeThrough(screenMotion) },
+            label = "searchResults",
+            modifier = Modifier.fillMaxSize(),
+        ) { phase ->
+        when (phase) {
+            SearchPhase.SEARCHING -> Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.TopCenter,
             ) {
-                CircularProgressIndicator(
+                // Expressive's shape-morphing loader rather than a plain ring — it is
+                // the one component that most reads as "this app is on M3 Expressive".
+                LoadingIndicator(
                     color = scheme.primary,
-                    modifier = Modifier.padding(top = 60.dp),
+                    modifier = Modifier
+                        .padding(top = 60.dp)
+                        .size(56.dp),
                 )
             }
 
-            results.isEmpty() && cached.isEmpty() -> Box(
+            SearchPhase.EMPTY -> Box(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 40.dp),
                 contentAlignment = Alignment.TopCenter,
             ) {
                 Text(
-                    text = if (query.isBlank()) {
-                        "Search for something to play."
-                    } else {
-                        "Nothing on this phone matches — press search to look online."
+                    text = when {
+                        query.isBlank() && isSymfonium -> "Search Symfonium's library."
+                        query.isBlank() -> "Search for something to play."
+                        isSymfonium -> "No matches in Symfonium."
+                        else -> "Nothing on this phone matches — press search to look online."
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = scheme.onSurfaceVariant,
@@ -152,15 +193,16 @@ fun SearchScreen(viewModel: DreamwaveViewModel) {
                 )
             }
 
-            else -> LazyColumn(
+            SearchPhase.RESULTS -> LazyColumn(
                 contentPadding = PaddingValues(
                     start = 16.dp, end = 16.dp,
                     bottom = LocalFloatingChromeInset.current + 24.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Cached matches are song matches — they mean nothing in radio modes.
-                if (cached.isNotEmpty() && searchMode == Protocol.searchModeSong) {
+                // Cached matches are song matches — they mean nothing in radio modes,
+                // and the on-disk cache is a YouTube-backend concept Symfonium never reads.
+                if (showCached) {
                     item { SectionLabel("On this phone") }
                     items(cached, key = { "cached_${it.videoId}" }) { item ->
                         SongRow(
@@ -182,15 +224,25 @@ fun SearchScreen(viewModel: DreamwaveViewModel) {
                                     viewModel.refreshCache()
                                 },
                             ),
+                            // Deleting a cached song pulls the row out and slides the
+                            // rest up on a spring instead of teleporting them.
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = listMotion.fade,
+                                placementSpec = listMotion.placement,
+                                fadeOutSpec = listMotion.fade,
+                            ),
                         )
                     }
                 }
                 if (results.isNotEmpty()) {
                     item {
                         SectionLabel(
-                            when (searchMode) {
-                                Protocol.searchModeArtist -> "Artists"
-                                Protocol.searchModeSongRadio -> "Pick a song to start its radio"
+                            when {
+                                searchMode == Protocol.searchModeAlbum -> "Albums"
+                                isSymfonium && searchMode == Protocol.searchModeArtist -> "Artists"
+                                isSymfonium -> "Symfonium"
+                                searchMode == Protocol.searchModeArtist -> "Artists"
+                                searchMode == Protocol.searchModeSongRadio -> "Pick a song to start its radio"
                                 else -> "YouTube Music"
                             },
                         )
@@ -204,17 +256,25 @@ fun SearchScreen(viewModel: DreamwaveViewModel) {
                             isPlaying = isPlaying,
                             onClick = {
                                 keyboard?.hide()
-                                viewModel.sendCommand(UiCommand.Play(item.videoId))
+                                viewModel.playFromActiveSource(item.videoId)
                             },
-                            menuItems = listOf(
+                            // Playlists are a YouTube-backend store, so Symfonium rows
+                            // get no menu - the only thing to do with one is play it.
+                            menuItems = if (isSymfonium) emptyList() else listOf(
                                 RowMenuItem("Add to playlist") {
                                     addToPlaylistTarget = item.videoId
                                 },
+                            ),
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = listMotion.fade,
+                                placementSpec = listMotion.placement,
+                                fadeOutSpec = listMotion.fade,
                             ),
                         )
                     }
                 }
             }
+        }
         }
     }
 

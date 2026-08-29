@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">dreamwave</string>
+    <string name="app_name">music-src</string>
 
     <!-- Common -->
     <string name="common_back">Back</string>

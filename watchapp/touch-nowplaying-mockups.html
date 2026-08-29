@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PT2 Music - Now Playing Touch Directions</title>
+<style>
+  :root {
+    --bg: #061216;
+    --ink: #ecf7f2;
+    --muted: #8fb2a9;
+    --line: #1f3b38;
+    --accent: #4de2b0;
+    --accent-2: #f7b955;
+    --panel: #0d1e22;
+    --danger: #f26f6f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    color: var(--ink);
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+    background:
+      radial-gradient(1200px 500px at 20% -10%, #0f2c32 5%, transparent 55%),
+      radial-gradient(800px 500px at 90% 0%, #261a0f 5%, transparent 60%),
+      var(--bg);
+  }
+  main { max-width: 1360px; margin: 0 auto; padding: 34px 20px 56px; }
+  .eyebrow {
+    color: #9dd8ca;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    font: 700 11px/1.2 "Consolas", monospace;
+  }
+  h1 {
+    margin: 10px 0 12px;
+    font-size: clamp(30px, 5vw, 56px);
+    line-height: .94;
+    letter-spacing: -.04em;
+  }
+  .intro {
+    max-width: 780px;
+    color: #bcd7d0;
+    margin: 0 0 22px;
+    line-height: 1.55;
+    font-size: 15px;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+  .pill {
+    border: 1px solid #2f5752;
+    border-radius: 999px;
+    padding: 7px 12px;
+    color: #9ec8be;
+    font: 600 12px/1.1 "Consolas", monospace;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 28px 18px;
+  }
+  .concept {
+    background: linear-gradient(180deg, #0f262a, #0c1b1f);
+    border: 1px solid #1f3c3a;
+    border-radius: 16px;
+    padding: 14px 14px 16px;
+  }
+  .concept h3 {
+    margin: 0 0 6px;
+    font-size: 18px;
+    letter-spacing: -.01em;
+  }
+  .concept p {
+    margin: 0;
+    color: #9cc0b7;
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+  .watch {
+    width: 240px;
+    height: 274px;
+    margin: 0 auto 12px;
+    padding: 17px 20px;
+    border-radius: 29px;
+    background: linear-gradient(145deg, #6a7576, #252a2c 42%, #06090a 84%);
+    box-shadow: 0 20px 36px #0009, inset 0 1px 2px #ffffff4a;
+    position: relative;
+  }
+  .watch:before, .watch:after {
+    content: "";
+    position: absolute;
+    right: -8px;
+    width: 8px;
+    border-radius: 0 5px 5px 0;
+    background: #2e3436;
+  }
+  .watch:before { top: 53px; height: 42px; }
+  .watch:after { top: 116px; height: 73px; }
+  .screen {
+    width: 200px;
+    height: 228px;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    background: #061013;
+    box-shadow: inset 0 0 0 1px #0f2e2d;
+  }
+  .screen * { position: absolute; }
+
+  .cover {
+    left: 5px;
+    top: 6px;
+    width: 190px;
+    height: 150px;
+    border-radius: 8px;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 65% 20%, #ffcc8f 0 9%, transparent 30%),
+      radial-gradient(circle at 20% 75%, #3a8da8a1 0 20%, transparent 46%),
+      linear-gradient(140deg, #0e2630, #2a1f35 56%, #111817);
+  }
+  .rail { left: 5px; top: 160px; width: 190px; height: 6px; background: #000; border-radius: 3px; }
+  .rail b { display: block; width: 72px; height: 6px; background: var(--accent); border-radius: 3px; }
+  .card {
+    left: 5px;
+    top: 170px;
+    width: 190px;
+    height: 52px;
+    background: #27ac84;
+    border-radius: 6px;
+  }
+  .song { left: 14px; top: 173px; width: 120px; font: 700 19px/20px "Avenir Next", sans-serif; color: #fff; }
+  .artist { left: 14px; top: 197px; width: 120px; font: 500 14px/16px "Avenir Next", sans-serif; color: #eaf9f5; }
+  .chip {
+    width: 44px;
+    height: 18px;
+    border-radius: 5px;
+    background: #07171b;
+    color: #fff;
+    font: 700 11px/18px "Consolas", monospace;
+    text-align: center;
+  }
+  .chip.l { left: 11px; top: 132px; }
+  .chip.r { left: 145px; top: 132px; }
+
+  .zone {
+    border: 1px dashed #ffffffaa;
+    border-radius: 8px;
+  }
+  .label {
+    background: #000c;
+    border: 1px solid #ffffff36;
+    border-radius: 4px;
+    color: #fff;
+    font: 700 10px/1.2 "Consolas", monospace;
+    padding: 2px 5px;
+    white-space: nowrap;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-2);
+    box-shadow: 0 0 0 2px #0008;
+  }
+  .path {
+    height: 2px;
+    transform-origin: 0 1px;
+    background: repeating-linear-gradient(90deg, var(--accent-2) 0 6px, transparent 6px 10px);
+  }
+  .legend {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    display: grid;
+    gap: 5px;
+    color: #cde3dd;
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+  .legend b { color: #f2fffc; }
+  .risk { color: #ffb6b6; }
+  .fit { color: #b6ffe1; }
+
+  footer {
+    margin-top: 28px;
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+    color: #9dc3ba;
+    font-size: 12px;
+    line-height: 1.45;
+    max-width: 920px;
+  }
+
+  @media (max-width: 560px) {
+    main { padding: 26px 12px 40px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">pt2-music / watchapp / now playing touch exploration</div>
+  <h1>Touch-first ideas for<br>Now Playing</h1>
+  <p class="intro">
+    Four non-circular directions that still feel radial-adjacent: center-anchored,
+    directional, and expressive, but without orbit gestures. These stay mapped to what
+    `np_touch_handle()` already sees: touchdown, move distance, hold timer, and liftoff.
+  </p>
+
+  <div class="meta">
+    <div class="pill">Target: Emery 200x228</div>
+    <div class="pill">No tiny tap targets</div>
+    <div class="pill">One-hand thumb use</div>
+    <div class="pill">Buttons remain fallback</div>
+  </div>
+
+  <section class="grid">
+    <article class="concept">
+      <div class="watch"><div class="screen">
+        <div class="cover"></div><div class="rail"><b></b></div><div class="card"></div>
+        <div class="song">Bloom Later</div><div class="artist">Chalk Vessels</div>
+        <div class="chip l">1:47</div><div class="chip r">4:02</div>
+
+        <div class="zone" style="left:5px;top:6px;width:190px;height:150px"></div>
+        <div class="label" style="left:13px;top:14px">Prism fan seek</div>
+        <div class="dot" style="left:96px;top:74px"></div>
+        <div class="path" style="left:99px;top:77px;width:70px;transform:rotate(-28deg)"></div>
+        <div class="path" style="left:99px;top:77px;width:62px;transform:rotate(-12deg)"></div>
+        <div class="path" style="left:99px;top:77px;width:67px;transform:rotate(6deg)"></div>
+        <div class="path" style="left:99px;top:77px;width:58px;transform:rotate(22deg)"></div>
+      </div></div>
+      <h3>1) Prism Fan</h3>
+      <p>Hold to arm, then sweep left/right across a fan of angled rays. Crossing each ray ticks seek in fixed jumps.</p>
+      <div class="legend">
+        <div><b>Core gesture:</b> hold + diagonal fan sweep</div>
+        <div class="fit"><b>Best for:</b> controlled seek without circles</div>
+        <div class="risk"><b>Risk:</b> needs visual cue on first use</div>
+      </div>
+    </article>
+
+    <article class="concept">
+      <div class="watch"><div class="screen">
+        <div class="cover"></div><div class="rail"><b></b></div><div class="card"></div>
+        <div class="song">Bloom Later</div><div class="artist">Chalk Vessels</div>
+        <div class="chip l">1:47</div><div class="chip r">4:02</div>
+
+        <div class="zone" style="left:13px;top:14px;width:174px;height:134px;clip-path:polygon(0 50%,50% 0,100% 50%,50% 100%)"></div>
+        <div class="label" style="left:17px;top:17px">Diamond lanes</div>
+        <div class="path" style="left:100px;top:78px;width:56px;transform:rotate(-45deg)"></div>
+        <div class="path" style="left:100px;top:78px;width:56px;transform:rotate(45deg)"></div>
+        <div class="path" style="left:100px;top:78px;width:56px;transform:rotate(135deg)"></div>
+        <div class="path" style="left:100px;top:78px;width:56px;transform:rotate(-135deg)"></div>
+      </div></div>
+      <h3>2) Diamond Cross</h3>
+      <p>A tilted four-way model: swipe toward a corner to trigger one action category. Longer travel means stronger action.</p>
+      <div class="legend">
+        <div><b>Core gesture:</b> center press + corner throw</div>
+        <div class="fit"><b>Best for:</b> distinct actions with clear muscle memory</div>
+        <div class="risk"><b>Risk:</b> corner mapping must stay consistent</div>
+      </div>
+    </article>
+
+    <article class="concept">
+      <div class="watch"><div class="screen">
+        <div class="cover"></div><div class="rail"><b></b></div><div class="card"></div>
+        <div class="song">Bloom Later</div><div class="artist">Chalk Vessels</div>
+        <div class="chip l">1:47</div><div class="chip r">4:02</div>
+
+        <div class="zone" style="left:5px;top:6px;width:190px;height:150px"></div>
+        <div class="label" style="left:18px;top:17px">Zigzag sequencer</div>
+        <div class="path" style="left:20px;top:52px;width:52px;transform:rotate(18deg)"></div>
+        <div class="path" style="left:69px;top:68px;width:52px;transform:rotate(-18deg)"></div>
+        <div class="path" style="left:118px;top:52px;width:52px;transform:rotate(18deg)"></div>
+        <div class="dot" style="left:20px;top:50px"></div>
+        <div class="dot" style="left:69px;top:66px"></div>
+        <div class="dot" style="left:118px;top:50px"></div>
+      </div></div>
+      <h3>3) Zigzag Ladder</h3>
+      <p>Touchdown starts at rung one. Each directional zigzag segment you complete advances to the next command in a short sequence.</p>
+      <div class="legend">
+        <div><b>Core gesture:</b> chained angled strokes</div>
+        <div class="fit"><b>Best for:</b> intentional commands, low accidental triggers</div>
+        <div class="risk"><b>Risk:</b> harder for quick one-tap interactions</div>
+      </div>
+    </article>
+
+    <article class="concept">
+      <div class="watch"><div class="screen">
+        <div class="cover"></div><div class="rail"><b></b></div><div class="card"></div>
+        <div class="song">Bloom Later</div><div class="artist">Chalk Vessels</div>
+        <div class="chip l">1:47</div><div class="chip r">4:02</div>
+
+        <div class="zone" style="left:5px;top:6px;width:190px;height:150px"></div>
+        <div class="label" style="left:15px;top:18px">Burst + settle</div>
+        <div class="dot" style="left:95px;top:74px"></div>
+        <div class="path" style="left:99px;top:78px;width:78px;transform:rotate(0deg)"></div>
+        <div class="path" style="left:99px;top:78px;width:78px;transform:rotate(120deg)"></div>
+        <div class="path" style="left:99px;top:78px;width:78px;transform:rotate(-120deg)"></div>
+        <div class="label" style="left:88px;top:122px">hold to confirm</div>
+      </div></div>
+      <h3>4) Tri-Burst</h3>
+      <p>Fast outward burst picks one of three spokes, then a short settle-hold confirms. Feels like radial intent without circular travel.</p>
+      <div class="legend">
+        <div><b>Core gesture:</b> burst direction + brief hold confirm</div>
+        <div class="fit"><b>Best for:</b> thumb-speed control with confirmation</div>
+        <div class="risk"><b>Risk:</b> two-phase gesture adds tiny latency</div>
+      </div>
+    </article>
+  </section>
+
+  <footer>
+    Recommended first prototype: <b>Prism Fan</b>. It stays center-anchored and expressive,
+    but drops circular motion entirely. Implementation can reuse your current hold-timer
+    arm step and just bucket the move vector by angle bands.
+  </footer>
+</main>
+</body>
+</html>

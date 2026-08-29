@@ -34,7 +34,7 @@ data class PlaybackAudioMetadata(
  * Of those members, most are lyrics, AI translation and library navigation, none
  * of which exist in a watch-audio companion; they are no-ops. The genuine
  * playback surface is small: [stablePlayerState], [currentPlaybackPosition],
- * [playPause], [seekTo].
+ * [playPause], [seekTo], [showAndPlaySong].
  *
  * Keeping the shape identical to upstream is what lets FullPlayerContent.kt stay
  * byte-for-byte vendored, so it can be re-synced from upstream by re-running the
@@ -44,6 +44,7 @@ class PlayerViewModel(
     private val onPlayPauseRequested: () -> Unit = {},
     private val onSeekRequested: (Long) -> Unit = {},
     private val onToastRequested: (String) -> Unit = {},
+    private val onPlaySongRequested: (Song) -> Unit = {},
 ) {
     @Immutable
     data class FullPlayerSlice(
@@ -88,16 +89,27 @@ class PlayerViewModel(
 
     fun sendToast(message: String) = onToastRequested(message)
 
-    // ── No-ops: features this companion does not have ───────────────────────
-    // Signatures mirror upstream so the vendored call sites compile unchanged.
-
+    /**
+     * Play a song the user picked out of the *current* queue.
+     *
+     * Upstream uses this to both replace the queue and start a track; here the only
+     * caller is the album carousel, which can only ever land on something already in
+     * the queue — so `contextSongs` and `queueName` are redundant and the host maps
+     * this onto a jump that leaves the surrounding order intact.
+     *
+     * This being a no-op is what made swiping the cover art animate and then snap
+     * back without ever changing track.
+     */
     @Suppress("UNUSED_PARAMETER")
     fun showAndPlaySong(
         song: Song,
         contextSongs: ImmutableList<Song>,
         queueName: String,
         indexInQueue: Int = 0,
-    ) = Unit
+    ) = onPlaySongRequested(song)
+
+    // ── No-ops: features this companion does not have ───────────────────────
+    // Signatures mirror upstream so the vendored call sites compile unchanged.
 
     fun setImmersiveTemporarilyDisabled(disabled: Boolean) {
         _fullPlayerSlice.value =

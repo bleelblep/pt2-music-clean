@@ -76,6 +76,11 @@ fun DreamwavePlayer(
                 viewModel.sendCommand(if (isPlayingNow) UiCommand.Pause else UiCommand.Resume)
             },
             onSeekRequested = { viewModel.sendCommand(UiCommand.SeekTo(it)) },
+            // Swiping the album carousel settles on a queue entry and calls
+            // showAndPlaySong. JumpQueue is the same command the queue sheet uses:
+            // it plays that track and leaves the surrounding queue order alone,
+            // which is exactly what a swipe means.
+            onPlaySongRequested = { viewModel.sendCommand(UiCommand.JumpQueue(it.id)) },
         )
     }
 

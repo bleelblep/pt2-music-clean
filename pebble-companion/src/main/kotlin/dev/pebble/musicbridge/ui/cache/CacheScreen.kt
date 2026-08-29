@@ -44,6 +44,7 @@ import dev.pebble.musicbridge.R
 import dev.pebble.musicbridge.UiCommand
 import dev.pebble.musicbridge.ui.DreamwaveViewModel
 import dev.pebble.musicbridge.ui.components.CircleIconButton
+import dev.pebble.musicbridge.ui.components.SourceNotice
 import dev.pebble.musicbridge.ui.components.Depth
 import dev.pebble.musicbridge.ui.components.LocalFloatingChromeInset
 import dev.pebble.musicbridge.ui.components.SmoothCard
@@ -57,6 +58,7 @@ import dev.pebble.musicbridge.ui.components.UsageMeter
 @Composable
 fun CacheScreen(viewModel: DreamwaveViewModel, onBack: () -> Unit) {
     val cache by viewModel.cacheState.collectAsState()
+    val isSymfonium by viewModel.isSymfonium.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     var deleteTarget by remember { mutableStateOf<CachedSongEntry?>(null) }
     var clearAllConfirm by remember { mutableStateOf(false) }
@@ -76,6 +78,14 @@ fun CacheScreen(viewModel: DreamwaveViewModel, onBack: () -> Unit) {
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        if (isSymfonium) {
+            item {
+                SourceNotice(
+                    text = "Symfonium is the active source and streams nothing through " +
+                        "this cache. What's here belongs to the YouTube backend.",
+                )
+            }
+        }
         item {
             // This screen is reached from two places and had no way out of either;
             // system back was the only exit, which is most of why back felt broken.

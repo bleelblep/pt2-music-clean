@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import dev.pebble.musicbridge.PlaybackUiState
+import dev.pebble.musicbridge.Protocol
 import dev.pebble.musicbridge.R
 import dev.pebble.musicbridge.SearchResultItem
 import dev.pebble.musicbridge.UiCommand
@@ -88,6 +89,7 @@ fun HomeScreen(
     val recommended by viewModel.recommended.collectAsState()
     val cache by viewModel.cacheState.collectAsState()
     val playing by viewModel.uiState.collectAsState()
+    val isSymfonium by viewModel.isSymfonium.collectAsState()
     val artworkUrls by viewModel.artworkUrls.collectAsState()
     val scheme = MaterialTheme.colorScheme
 
@@ -126,15 +128,36 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // The route is read from the live playback state, not the settings
-                // snapshot, so the pill follows watch-side toggles as they happen.
+                // Which backend serves the watch. Tapping swaps it, and the change
+                // travels to the watch (and survives the watch's next settings sync,
+                // which is what the source epoch is for). A watch-side swap lands here
+                // the same way, so this pill is always the truth rather than a guess.
                 StatusPill(
-                    icon = if (playing.phoneAudio) R.drawable.rounded_mobile_speaker_24 else R.drawable.ic_watch,
-                    label = if (playing.phoneAudio) "Phone" else "Watch",
+                    icon = R.drawable.rounded_queue_music_24,
+                    label = if (isSymfonium) "Symfonium" else "YouTube",
+                    container = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     onClick = {
-                        viewModel.applySetting(UiCommand.SetAudioRoute(toPhone = !playing.phoneAudio))
+                        viewModel.setMusicSource(
+                            if (isSymfonium) Protocol.sourceYouTube else Protocol.sourceSymfonium,
+                        )
                     },
                 )
+                Spacer(Modifier.width(8.dp))
+                // The route is read from the live playback state, not the settings
+                // snapshot, so the pill follows watch-side toggles as they happen.
+                // Symfonium plays through its own app on the phone and has no
+                // watch-speaker route to offer, so the pill goes away for that source
+                // rather than presenting a switch that does nothing.
+                if (!isSymfonium) {
+                    StatusPill(
+                        icon = if (playing.phoneAudio) R.drawable.rounded_mobile_speaker_24 else R.drawable.ic_watch,
+                        label = if (playing.phoneAudio) "Phone" else "Watch",
+                        onClick = {
+                            viewModel.applySetting(UiCommand.SetAudioRoute(toPhone = !playing.phoneAudio))
+                        },
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 // One overflow holds the phone-local destinations — appearance, the
                 // cache viewer, and the pointer to where settings now live — so the

@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dreamwave — What's New redesign</title>
+<style>
+  :root {
+    --accent: #FF00AA;
+    --page-bg: #14131a;
+    --card-bg: #1e1c26;
+    --edge: #322f3d;
+    --ink: #e9e6f2;
+    --ink-dim: #9c96b0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 28px 80px;
+    background: var(--page-bg); color: var(--ink);
+    font: 15px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  header, main { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.2px; }
+  h2 {
+    font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase;
+    color: var(--ink-dim); margin: 46px 0 4px; font-weight: 600;
+  }
+  .lede { color: var(--ink-dim); max-width: 78ch; margin: 0 0 18px; }
+  .lede code, .why code { color: var(--ink); background: #2a2733; padding: 1px 5px; border-radius: 4px; }
+  .themebar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 18px 0 4px; }
+  .themebar span { color: var(--ink-dim); font-size: 13px; margin-right: 4px; }
+  .themebar button {
+    background: var(--card-bg); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 999px; padding: 5px 13px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .themebar button:hover { border-color: var(--ink-dim); }
+  .themebar button[aria-pressed="true"] { border-color: var(--accent); color: #fff; }
+  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 26px; margin-top: 14px; }
+  .card { background: var(--card-bg); border: 1px solid var(--edge); border-radius: 12px; padding: 18px; }
+  .card.ref { opacity: 0.74; }
+  .card h3 { margin: 0; font-size: 15px; display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+  .tag {
+    font: 600 11px/1 "Segoe UI", system-ui, sans-serif; letter-spacing: 1px;
+    background: var(--accent); color: #fff; padding: 4px 7px; border-radius: 4px;
+  }
+  .card.ref .tag { background: #4a4657; }
+  .pickbadge {
+    font: 600 10px/1 "Segoe UI", system-ui, sans-serif; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--accent); border: 1px solid var(--accent); padding: 3px 6px; border-radius: 4px;
+  }
+  .why { color: var(--ink-dim); font-size: 13.5px; margin: 7px 0 14px; min-height: 56px; }
+  .why b { color: var(--ink); font-weight: 600; }
+  .cost { font-size: 12.5px; color: #7d7791; margin: 12px 0 0; border-top: 1px solid var(--edge); padding-top: 10px; }
+  .cost b { color: var(--ink-dim); font-weight: 600; }
+
+  /* Emery is 200x228; every screen is authored in real watch pixels and scaled 2x. */
+  .frame { width: 400px; height: 456px; border-radius: 6px; overflow: hidden; }
+  .screen {
+    position: relative; width: 200px; height: 228px; overflow: hidden;
+    transform: scale(2); transform-origin: top left;
+    font-family: "Segoe UI", Roboto, system-ui, sans-serif;
+    font-stretch: 96%;
+    background: var(--bg); color: var(--fg);
+    /* Default Dark */
+    --bg: #000000; --fg: #FFFFFF; --ac: #5555AA; --on: #FFFFFF; --dim: #AAAAAA; --surf: #555555;
+  }
+  body[data-theme="light"]  .screen { --bg:#FFFFFF; --fg:#000000; --ac:#5555AA; --on:#FFFFFF; --dim:#555555; --surf:#AAAAAA; }
+  body[data-theme="arcade"] .screen { --bg:#550055; --fg:#00FFFF; --ac:#00FFFF; --on:#550055; --dim:#00AAAA; --surf:#AA00AA; }
+  body[data-theme="sunset"] .screen { --bg:#AA0000; --fg:#FFFFFF; --ac:#FF5555; --on:#000000; --dim:#FFAAAA; --surf:#FF5555; }
+  body[data-theme="purple"] .screen { --bg:#550055; --fg:#FFFFFF; --ac:#AA55AA; --on:#FFFFFF; --dim:#AAAAAA; --surf:#AA55AA; }
+  body[data-theme="mono"]   .screen { --bg:#000000; --fg:#FFFFFF; --ac:#FFFFFF; --on:#000000; --dim:#AAAAAA; --surf:#555555; }
+
+  .screen div { position: absolute; }
+  .screen .tx { white-space: pre; letter-spacing: -0.2px; }
+  .screen .wrap { white-space: normal; }
+
+  /* Shared bespoke primitives, in watch pixels. */
+  .eyebrow { left:18px; top:13px; width:150px; font:bold 14px/18px inherit; letter-spacing:0.6px; }
+  .vpill   { top:12px; height:20px; border-radius:4px; background:var(--ac); color:var(--on);
+             font:bold 14px/20px inherit; text-align:center; }
+  .sbtrack { left:194px; width:4px; border-radius:2px; background:var(--surf); opacity:.5; }
+  .sbthumb { left:194px; width:4px; border-radius:2px; background:var(--ac); }
+  .hint    { left:8px; top:204px; width:184px; text-align:center; font:14px/18px inherit; color:var(--fg); }
+  .sect    { font:bold 14px/18px inherit; letter-spacing:1px; color:var(--ac); }
+  .bul     { font:18px/20px inherit; }
+  .emo     { font:16px/20px inherit; }
+</style>
+</head>
+<body data-theme="dark">
+<header>
+  <h1>What&rsquo;s New &mdash; redesign variants</h1>
+  <p class="lede">
+    Six directions for <code>draw_whats_new()</code>, all in real emery pixels (200&times;228, shown 2&times;).
+    The brief: the current screen is flat and doesn&rsquo;t speak the bespoke language. Every variant below
+    is built only from primitives the app already has &mdash; the <code>bespoke_eyebrow</code> at (18,14), the
+    <code>bespoke_row1</code> value pill, the rounded <code>r=4</code> accent fill at <code>x=5 w=190</code>,
+    the right-edge scrollbar at <code>x=194</code>, and the footer hint band at <code>y=204</code> &mdash; so none of
+    them need a new drawing idiom.
+  </p>
+  <div class="themebar">
+    <span>Theme</span>
+    <button data-t="dark"   aria-pressed="true"><i class="swatch" style="background:#5555AA"></i>Default Dark</button>
+    <button data-t="light"  aria-pressed="false"><i class="swatch" style="background:#5555AA"></i>Default Light</button>
+    <button data-t="arcade" aria-pressed="false"><i class="swatch" style="background:#00FFFF"></i>Arcade</button>
+    <button data-t="sunset" aria-pressed="false"><i class="swatch" style="background:#FF5555"></i>Sunset</button>
+    <button data-t="purple" aria-pressed="false"><i class="swatch" style="background:#AA55AA"></i>Purple</button>
+    <button data-t="mono"   aria-pressed="false"><i class="swatch" style="background:#FFFFFF"></i>Mono</button>
+  </div>
+</header>
+
+<main>
+<h2>Where it is now</h2>
+<div class="grid">
+
+  <!-- ============ REFERENCE ============ -->
+  <div class="card ref">
+    <h3><span class="tag">NOW</span> Fixed 76px header, flat body</h3>
+    <p class="why">
+      A 28&nbsp;Bold title and a 24&nbsp;Bold version stacked in a 76px band, then an
+      undifferentiated 18pt list. <b>It is the only screen in the app with no eyebrow</b>, and the
+      section labels are just dim text on the same left margin as the bullets, so NEW / IMPROVED /
+      SYMFONIUM don&rsquo;t read as structure. Emoji and text share one wrap box, so a second line
+      tucks under the icon.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx" style="left:18px;top:6px;font:bold 28px/34px inherit">What's New</div>
+      <div class="tx" style="left:18px;top:40px;font:bold 24px/30px inherit;color:var(--ac)">0.6.0</div>
+      <div class="wrap" style="left:18px;top:86px;width:170px;font:bold 18px/20px inherit;color:var(--dim)">NEW</div>
+      <div class="wrap" style="left:18px;top:114px;width:170px;font:18px/20px inherit">🌗 Default Dark &amp; Default Light</div>
+      <div class="wrap" style="left:18px;top:162px;width:170px;font:18px/20px inherit">📖 What's New has its own button</div>
+      <div class="wrap" style="left:18px;top:210px;width:170px;font:bold 18px/20px inherit;color:var(--dim)">IMPROVED</div>
+      <div class="sbtrack" style="top:76px;height:152px"></div>
+      <div class="sbthumb" style="top:76px;height:44px"></div>
+    </div></div>
+    <p class="cost"><b>Header cost</b> 76px of 228 &mdash; a third of the screen before any content.</p>
+  </div>
+</div>
+
+<h2>The variants</h2>
+<div class="grid">
+
+  <!-- ============ A ============ -->
+  <div class="card">
+    <h3><span class="tag">A</span> Eyebrow + version pill <span class="pickbadge">smallest diff</span></h3>
+    <p class="why">
+      The literal conformance fix. The 76px band collapses to the standard 40px eyebrow, and the
+      version moves into <b>the same filled pill <code>bespoke_row1</code> uses for a setting&rsquo;s
+      value</b> &mdash; so the release number reads as the current value of &ldquo;which version&rdquo;, exactly
+      like Theme or Keyboard elsewhere. Section labels become accent 14&nbsp;Bold with a hairline
+      running to the right margin. Bullets get a hanging indent so wrapped lines clear the emoji.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx eyebrow">WHAT'S NEW</div>
+      <div class="vpill tx" style="left:140px;width:48px">0.6.0</div>
+      <div class="tx sect" style="left:18px;top:44px">NEW</div>
+      <div style="left:48px;top:51px;width:140px;height:1px;background:var(--surf);opacity:.55"></div>
+      <div class="tx emo" style="left:18px;top:66px">🌗</div>
+      <div class="wrap bul" style="left:40px;top:64px;width:148px">Default Dark &amp; Default Light</div>
+      <div class="tx emo" style="left:18px;top:110px">📖</div>
+      <div class="wrap bul" style="left:40px;top:108px;width:148px">What's New has its own button</div>
+      <div class="tx sect" style="left:18px;top:152px">IMPROVED</div>
+      <div style="left:88px;top:159px;width:100px;height:1px;background:var(--surf);opacity:.55"></div>
+      <div class="tx emo" style="left:18px;top:174px">⏱</div>
+      <div class="wrap bul" style="left:40px;top:172px;width:148px">Now Playing counts up, not down</div>
+      <div class="sbtrack" style="top:40px;height:188px"></div>
+      <div class="sbthumb" style="top:40px;height:58px"></div>
+    </div></div>
+    <p class="cost"><b>Gains 36px</b> of body. <b>Draw cost</b> ~1 extra rect + reuse of the pill measure.</p>
+  </div>
+
+  <!-- ============ B ============ -->
+  <div class="card">
+    <h3><span class="tag">B</span> Section cards</h3>
+    <p class="why">
+      Each section becomes a rounded surface at <b>the exact geometry of a selection row</b>
+      (<code>x=5 w=190 r=4</code>), with its name as an accent pill notched into the top-left corner.
+      The grouping is now a shape rather than a font weight, which is what makes NEW and SYMFONIUM
+      feel like separate answers. Costs one fill per section and reads well on the dark themes;
+      on Default&nbsp;Light the surface has to stay very close to the ground or it turns into a box-fest.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx eyebrow">WHAT'S NEW</div>
+      <div class="vpill tx" style="left:140px;width:48px">0.6.0</div>
+      <div style="left:5px;top:46px;width:190px;height:82px;border-radius:4px;background:var(--surf);opacity:.28"></div>
+      <div class="tx" style="left:12px;top:40px;height:16px;padding:0 7px;border-radius:4px;background:var(--ac);color:var(--on);font:bold 12px/16px inherit;letter-spacing:.8px">NEW</div>
+      <div class="tx emo" style="left:16px;top:64px">🌗</div>
+      <div class="wrap bul" style="left:38px;top:62px;width:150px">Default Dark &amp; Default Light</div>
+      <div class="tx emo" style="left:16px;top:100px">📖</div>
+      <div class="wrap bul" style="left:38px;top:98px;width:150px">What's New has its own button</div>
+      <div style="left:5px;top:140px;width:190px;height:82px;border-radius:4px;background:var(--surf);opacity:.28"></div>
+      <div class="tx" style="left:12px;top:134px;height:16px;padding:0 7px;border-radius:4px;background:var(--ac);color:var(--on);font:bold 12px/16px inherit;letter-spacing:.8px">IMPROVED</div>
+      <div class="tx emo" style="left:16px;top:158px">⏱</div>
+      <div class="wrap bul" style="left:38px;top:156px;width:150px">Now Playing counts up, not down</div>
+      <div class="sbtrack" style="top:40px;height:188px"></div>
+      <div class="sbthumb" style="top:40px;height:52px"></div>
+    </div></div>
+    <p class="cost"><b>Needs</b> a surface tint that survives six themes. <b>Watch out:</b> card height must be measured, not fixed.</p>
+  </div>
+
+  <!-- ============ C ============ -->
+  <div class="card">
+    <h3><span class="tag">C</span> Accent rail <span class="pickbadge">cheapest structure</span></h3>
+    <p class="why">
+      A 3px accent bar down the left of each section, bullets indented past it. You get the same
+      &ldquo;these belong together&rdquo; grouping as the cards for <b>one thin rect per section</b> and no
+      surface color to tune &mdash; it works identically on Arcade and Default&nbsp;Light because it is
+      drawn in the accent, which every theme guarantees. The rail also gives the eye a vertical
+      line to track while scrolling, which the current screen completely lacks.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx eyebrow">WHAT'S NEW</div>
+      <div class="vpill tx" style="left:140px;width:48px">0.6.0</div>
+      <div class="tx sect" style="left:18px;top:44px">NEW</div>
+      <div style="left:18px;top:64px;width:3px;height:82px;border-radius:2px;background:var(--ac)"></div>
+      <div class="tx emo" style="left:30px;top:64px">🌗</div>
+      <div class="wrap bul" style="left:52px;top:62px;width:136px">Default Dark &amp; Default Light</div>
+      <div class="tx emo" style="left:30px;top:108px">📖</div>
+      <div class="wrap bul" style="left:52px;top:106px;width:136px">What's New has its own button</div>
+      <div class="tx sect" style="left:18px;top:154px">IMPROVED</div>
+      <div style="left:18px;top:174px;width:3px;height:48px;border-radius:2px;background:var(--ac)"></div>
+      <div class="tx emo" style="left:30px;top:174px">⏱</div>
+      <div class="wrap bul" style="left:52px;top:172px;width:136px">Now Playing counts up, not down</div>
+      <div class="sbtrack" style="top:40px;height:188px"></div>
+      <div class="sbthumb" style="top:40px;height:56px"></div>
+    </div></div>
+    <p class="cost"><b>Draw cost</b> one <code>graphics_fill_rect</code> per section. <b>Text width</b> drops to 136px &mdash; more wrapping.</p>
+  </div>
+
+  <!-- ============ D ============ -->
+  <div class="card">
+    <h3><span class="tag">D</span> Ledger rows <span class="pickbadge">most native</span></h3>
+    <p class="why">
+      Stops treating this as prose and treats it as <b>a list, like every other screen in the app</b>.
+      Each bullet is a row on the shared rhythm with the emoji in a fixed 22px gutter and a hairline
+      under it; each section is a full-width accent bar with the label in <code>on_accent</code> &mdash;
+      the same inversion a selected row uses. Scrolling this feels exactly like scrolling the Queue,
+      which is the strongest possible answer to &ldquo;it doesn&rsquo;t fit the language&rdquo;.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx eyebrow">WHAT'S NEW</div>
+      <div class="vpill tx" style="left:140px;width:48px">0.6.0</div>
+      <div style="left:5px;top:44px;width:190px;height:20px;border-radius:4px;background:var(--ac)"></div>
+      <div class="tx" style="left:13px;top:44px;font:bold 14px/20px inherit;letter-spacing:1px;color:var(--on)">NEW</div>
+      <div class="tx emo" style="left:13px;top:70px">🌗</div>
+      <div class="wrap bul" style="left:37px;top:68px;width:150px">Default Dark &amp; Default Light</div>
+      <div style="left:13px;top:112px;width:174px;height:1px;background:var(--surf);opacity:.5"></div>
+      <div class="tx emo" style="left:13px;top:120px">📖</div>
+      <div class="wrap bul" style="left:37px;top:118px;width:150px">What's New has its own button</div>
+      <div style="left:13px;top:162px;width:174px;height:1px;background:var(--surf);opacity:.5"></div>
+      <div style="left:5px;top:172px;width:190px;height:20px;border-radius:4px;background:var(--ac)"></div>
+      <div class="tx" style="left:13px;top:172px;font:bold 14px/20px inherit;letter-spacing:1px;color:var(--on)">IMPROVED</div>
+      <div class="tx emo" style="left:13px;top:198px">⏱</div>
+      <div class="wrap bul" style="left:37px;top:196px;width:150px">Now Playing counts up…</div>
+      <div class="sbtrack" style="top:40px;height:188px"></div>
+      <div class="sbthumb" style="top:40px;height:50px"></div>
+    </div></div>
+    <p class="cost"><b>Reuses</b> the row metrics wholesale. <b>Cost:</b> hairlines add ~14 rects across the list.</p>
+  </div>
+
+  <!-- ============ E ============ -->
+  <div class="card">
+    <h3><span class="tag">E</span> Release digest</h3>
+    <p class="why">
+      Keeps a real header but <b>makes it earn its pixels</b>: the version is the hero, and under it a
+      strip of counted pills tells you the shape of the release before you read a word &mdash;
+      &ldquo;2 new, 2 better, 13 Symfonium&rdquo; is itself the headline for this build. Good when a release
+      is lopsided, which this one is. The header is 62px rather than 76, and unlike the current
+      one nothing in it is redundant with the screen&rsquo;s own name in the menu you came from.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx eyebrow">WHAT'S NEW</div>
+      <div class="tx" style="left:18px;top:28px;font:bold 28px/32px inherit;color:var(--ac)">0.6.0</div>
+      <div class="tx" style="left:18px;top:64px;height:18px;padding:0 7px;border-radius:4px;background:var(--ac);color:var(--on);font:bold 12px/18px inherit">2 NEW</div>
+      <div class="tx" style="left:66px;top:64px;height:18px;padding:0 7px;border-radius:4px;background:var(--surf);opacity:.9;color:var(--fg);font:bold 12px/18px inherit">2 BETTER</div>
+      <div class="tx" style="left:132px;top:64px;height:18px;padding:0 7px;border-radius:4px;background:var(--surf);opacity:.9;color:var(--fg);font:bold 12px/18px inherit">13 SYM</div>
+      <div style="left:0;top:92px;width:200px;height:1px;background:var(--surf);opacity:.5"></div>
+      <div class="tx sect" style="left:18px;top:100px">NEW</div>
+      <div class="tx emo" style="left:18px;top:122px">🌗</div>
+      <div class="wrap bul" style="left:40px;top:120px;width:148px">Default Dark &amp; Default Light</div>
+      <div class="tx emo" style="left:18px;top:166px">📖</div>
+      <div class="wrap bul" style="left:40px;top:164px;width:148px">What's New has its own button</div>
+      <div class="sbtrack" style="top:96px;height:132px"></div>
+      <div class="sbthumb" style="top:96px;height:42px"></div>
+    </div></div>
+    <p class="cost"><b>Needs</b> per-kind counts &mdash; derivable from the table at build time, no new data.</p>
+  </div>
+
+  <!-- ============ F ============ -->
+  <div class="card">
+    <h3><span class="tag">F</span> Paged sections</h3>
+    <p class="why">
+      One section per page, Up/Down to move between them, no scrolling inside a page. Kills the
+      thing that actually makes the current screen tiring &mdash; <b>a 14-item scroll with no sense of
+      how far in you are</b> &mdash; and replaces the scrollbar with three dots you can count. It also
+      puts the footer hint band to work, which every other screen uses and this one doesn&rsquo;t.
+      The risk is Symfonium&rsquo;s 13 bullets still overflow a single page, so that one page scrolls anyway.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx eyebrow">WHAT'S NEW</div>
+      <div class="vpill tx" style="left:140px;width:48px">0.6.0</div>
+      <div class="tx" style="left:18px;top:46px;font:bold 24px/28px inherit;color:var(--ac)">NEW</div>
+      <div style="left:18px;top:78px;width:40px;height:2px;background:var(--ac)"></div>
+      <div class="tx emo" style="left:18px;top:94px">🌗</div>
+      <div class="wrap bul" style="left:40px;top:92px;width:148px">Default Dark &amp; Default Light</div>
+      <div class="tx emo" style="left:18px;top:140px">📖</div>
+      <div class="wrap bul" style="left:40px;top:138px;width:148px">What's New has its own button</div>
+      <div style="left:78px;top:186px;width:7px;height:7px;border-radius:50%;background:var(--ac)"></div>
+      <div style="left:94px;top:186px;width:7px;height:7px;border-radius:50%;background:var(--surf)"></div>
+      <div style="left:110px;top:186px;width:7px;height:7px;border-radius:50%;background:var(--surf)"></div>
+      <div class="tx hint">Down for Improved</div>
+    </div></div>
+    <p class="cost"><b>Changes navigation</b>, not just paint &mdash; Up/Down rebind on this screen. Biggest behavioural diff.</p>
+  </div>
+
+</div>
+
+<h2>Title treatments &mdash; keeping the current layout</h2>
+<p class="lede">
+  Same 76px header, same body, only the type changes. Two facts shape the options: the platform ships
+  <b>exactly one serif</b> (<code>DROID_SERIF_28_BOLD</code>), and the version string is <b>pure digits</b>,
+  which is what the LECO faces exist for. The header gives the title a 176px line &mdash; the existing code
+  comment records that <code>BITHAM_30_BLACK</code> overflows it, so anything wider than Gothic 28 Bold
+  needs checking rather than assuming. Widths below are approximations in a browser, not device metrics.
+</p>
+<div class="grid">
+
+  <div class="card">
+    <h3><span class="tag">T1</span> Droid Serif <span class="pickbadge">one-word change</span></h3>
+    <p class="why">
+      The whole flourish in a single argument. Against 18pt Gothic body copy a serif title reads as
+      <b>a masthead rather than a label</b>, and it is the only face on the watch that can do that.
+      Same 28px size, same box, no layout change at all.
+      <b>Risk:</b> serifs run wider than Gothic &mdash; this is the one that most needs a real width check.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx" style="left:18px;top:5px;font:bold 28px/34px Georgia,'Droid Serif',serif">What's New</div>
+      <div class="tx" style="left:18px;top:40px;font:bold 24px/30px inherit;color:var(--ac)">0.6.0</div>
+      <div class="wrap" style="left:18px;top:86px;width:170px;font:bold 18px/20px inherit;color:var(--dim)">NEW</div>
+      <div class="wrap" style="left:18px;top:114px;width:170px;font:18px/20px inherit">🌗 Default Dark &amp; Default Light</div>
+      <div class="wrap" style="left:18px;top:162px;width:170px;font:18px/20px inherit">📖 What's New has its own button</div>
+      <div class="sbtrack" style="top:76px;height:152px"></div>
+      <div class="sbthumb" style="top:76px;height:44px"></div>
+    </div></div>
+    <p class="cost"><b>Diff</b> one font key. <b>Verify</b> that "What's New" fits 176px.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="tag">T2</span> Serif title + LECO version <span class="pickbadge">strongest</span></h3>
+    <p class="why">
+      Pairs the serif with the version set in <code>LECO_32_BOLD_NUMBERS</code> &mdash; a squared numeral face
+      that makes <code>0.6.0</code> look like <b>a version stamp instead of a line of text</b>. Two display
+      faces doing two different jobs, which is what makes a header feel designed rather than sized.
+      <b>Check first:</b> the LECO faces are numeral subsets; confirm the period glyph exists or the dots vanish.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx" style="left:18px;top:5px;font:bold 28px/34px Georgia,'Droid Serif',serif">What's New</div>
+      <div class="tx" style="left:18px;top:38px;font:bold 32px/34px Bahnschrift,'DIN Alternate',Impact,sans-serif;letter-spacing:1px;color:var(--ac)">0.6.0</div>
+      <div class="wrap" style="left:18px;top:86px;width:170px;font:bold 18px/20px inherit;color:var(--dim)">NEW</div>
+      <div class="wrap" style="left:18px;top:114px;width:170px;font:18px/20px inherit">🌗 Default Dark &amp; Default Light</div>
+      <div class="wrap" style="left:18px;top:162px;width:170px;font:18px/20px inherit">📖 What's New has its own button</div>
+      <div class="sbtrack" style="top:76px;height:152px"></div>
+      <div class="sbthumb" style="top:76px;height:44px"></div>
+    </div></div>
+    <p class="cost"><b>Diff</b> two font keys. <b>Risk</b> missing <code>.</code> glyph in the LECO subset.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="tag">T3</span> Bitham Black, stacked</h3>
+    <p class="why">
+      Uses the display face the code wanted originally and <b>solves the width problem by breaking the
+      line</b> &mdash; "What's" over "New", which is also the natural reading break. Bitham 30 Black is the
+      heaviest face on the platform, so this is the loudest option here. The version moves to the
+      right of the second line to reclaim the vertical space the stack costs.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx" style="left:18px;top:2px;font:900 30px/30px 'Century Gothic','Futura',system-ui,sans-serif;letter-spacing:-0.5px">What's</div>
+      <div class="tx" style="left:18px;top:32px;font:900 30px/30px 'Century Gothic','Futura',system-ui,sans-serif;letter-spacing:-0.5px">New</div>
+      <div class="tx" style="left:104px;top:40px;font:bold 24px/28px inherit;color:var(--ac)">0.6.0</div>
+      <div class="wrap" style="left:18px;top:86px;width:170px;font:bold 18px/20px inherit;color:var(--dim)">NEW</div>
+      <div class="wrap" style="left:18px;top:114px;width:170px;font:18px/20px inherit">🌗 Default Dark &amp; Default Light</div>
+      <div class="wrap" style="left:18px;top:162px;width:170px;font:18px/20px inherit">📖 What's New has its own button</div>
+      <div class="sbtrack" style="top:76px;height:152px"></div>
+      <div class="sbthumb" style="top:76px;height:44px"></div>
+    </div></div>
+    <p class="cost"><b>Two draw calls</b> for the title. Header stays 76px.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="tag">T4</span> Version as the hero</h3>
+    <p class="why">
+      Inverts the hierarchy: the screen name shrinks to a normal eyebrow and <b>the release number
+      becomes the flourish</b>, set huge in <code>LECO_42_NUMBERS</code>. Defensible because you already
+      know what screen you opened &mdash; the thing you don't know is which version you're reading about.
+      This is the only option that makes the header's 76px feel spent on information rather than on a label.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx eyebrow">WHAT'S NEW</div>
+      <div class="tx" style="left:16px;top:28px;font:400 42px/44px Bahnschrift,'DIN Alternate',Impact,sans-serif;letter-spacing:1px;color:var(--ac)">0.6.0</div>
+      <div class="wrap" style="left:18px;top:86px;width:170px;font:bold 18px/20px inherit;color:var(--dim)">NEW</div>
+      <div class="wrap" style="left:18px;top:114px;width:170px;font:18px/20px inherit">🌗 Default Dark &amp; Default Light</div>
+      <div class="wrap" style="left:18px;top:162px;width:170px;font:18px/20px inherit">📖 What's New has its own button</div>
+      <div class="sbtrack" style="top:76px;height:152px"></div>
+      <div class="sbthumb" style="top:76px;height:44px"></div>
+    </div></div>
+    <p class="cost"><b>Same 76px.</b> Needs the LECO period glyph, like T2.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="tag">T5</span> Two-tone Gothic <span class="pickbadge">zero risk</span></h3>
+    <p class="why">
+      No new face at all: "What's" stays in the foreground, "New" flips to the accent. The flourish is
+      colour rather than type, so <b>it cannot overflow and cannot miss a glyph</b> &mdash; and it ties the
+      title to the accent the version and scrollbar already use. Least exciting, but the only option
+      here that carries no verification step whatsoever.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx" style="left:18px;top:6px;font:bold 28px/34px inherit">What's</div>
+      <div class="tx" style="left:104px;top:6px;font:bold 28px/34px inherit;color:var(--ac)">New</div>
+      <div class="tx" style="left:18px;top:40px;font:bold 24px/30px inherit;color:var(--dim)">0.6.0</div>
+      <div class="wrap" style="left:18px;top:86px;width:170px;font:bold 18px/20px inherit;color:var(--dim)">NEW</div>
+      <div class="wrap" style="left:18px;top:114px;width:170px;font:18px/20px inherit">🌗 Default Dark &amp; Default Light</div>
+      <div class="wrap" style="left:18px;top:162px;width:170px;font:18px/20px inherit">📖 What's New has its own button</div>
+      <div class="sbtrack" style="top:76px;height:152px"></div>
+      <div class="sbthumb" style="top:76px;height:44px"></div>
+    </div></div>
+    <p class="cost"><b>Two draw calls</b>, one measured x-offset. No font risk.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="tag">T6</span> Serif + accent rule</h3>
+    <p class="why">
+      T1 with a 2px accent rule under the title, sized to the text rather than the box. The rule does
+      the work the current header's whitespace fails to do &mdash; <b>it separates title from version</b> so the
+      two stop reading as one stacked block, and it echoes the section hairlines if you ever add them
+      to the body. Closest thing to an editorial masthead the platform allows.
+    </p>
+    <div class="frame"><div class="screen">
+      <div class="tx" style="left:18px;top:3px;font:bold 28px/32px Georgia,'Droid Serif',serif">What's New</div>
+      <div style="left:18px;top:36px;width:132px;height:2px;background:var(--ac)"></div>
+      <div class="tx" style="left:18px;top:44px;font:bold 24px/28px inherit;color:var(--fg)">0.6.0</div>
+      <div class="wrap" style="left:18px;top:86px;width:170px;font:bold 18px/20px inherit;color:var(--dim)">NEW</div>
+      <div class="wrap" style="left:18px;top:114px;width:170px;font:18px/20px inherit">🌗 Default Dark &amp; Default Light</div>
+      <div class="wrap" style="left:18px;top:162px;width:170px;font:18px/20px inherit">📖 What's New has its own button</div>
+      <div class="sbtrack" style="top:76px;height:152px"></div>
+      <div class="sbthumb" style="top:76px;height:44px"></div>
+    </div></div>
+    <p class="cost"><b>One extra rect</b>, width from the title's measured size.</p>
+  </div>
+
+</div>
+
+<h2>One content note, separate from the visuals</h2>
+<p class="lede">
+  The last three SYMFONIUM bullets &mdash; <code>💥 Search crashes</code>, <code>🎩 Favorites capped at 40</code>,
+  <code>🔀 Route wedged on Watch</code> &mdash; are fixes, but nothing on screen says so, so they currently read as
+  a list of things the release <em>does</em>. Whichever layout you pick, those want either a <code>FIXED</code>
+  section of their own or a leading verb. Variant&nbsp;D&rsquo;s accent bar and variant&nbsp;E&rsquo;s counted pills both
+  make that omission more obvious, not less.
+</p>
+
+</main>
+<script>
+  const bar = document.querySelector('.themebar');
+  bar.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.body.dataset.theme = b.dataset.t;
+    bar.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  });
+</script>
+</body>
+</html>

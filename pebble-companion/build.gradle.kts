@@ -22,8 +22,8 @@ android {
         applicationId = "dev.pebble.musicbridge"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 7
+        versionName = "0.7.0"
     }
 
     compileOptions {
@@ -77,6 +77,12 @@ dependencies {
     implementation(files("libs/watchimagebridge.aar"))
     implementation(libs.media3)
     implementation(libs.media3.session)
+    // googlevideo 403s Media3's built-in HTTP stack on stream URLs that plain OkHttp
+    // downloads without complaint, so ExoPlayer is pointed at OkHttp instead.
+    implementation(libs.media3.datasource.okhttp)
+    // MediaBrowserCompat, for probing Symfonium's legacy search without Media3's
+    // ResultReceiver marshalling (see SymfoniumPlaybackService.debugCompatSearch).
+    implementation(libs.androidx.media)
     implementation(libs.pebblekit.client)
     implementation(libs.pipepipe.extractor)
     implementation(libs.okhttp)

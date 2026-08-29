@@ -1,6 +1,6 @@
 # Watchapp
 
-The dreamwave watchapp (`watchapp/`) is a native Pebble C app targeting **emery** (Pebble Time 2). It is the remote control and, optionally, the speaker for the whole system: it browses, searches and controls playback on the phone, or plays audio itself through the Time 2's speaker.
+The music-pbl watchapp (`watchapp/`) is a native Pebble C app targeting **emery** (Pebble Time 2). It is the remote control and, optionally, the speaker for the whole system: it browses, searches and controls playback on the phone, or plays audio itself through the Time 2's speaker.
 
 UUID: `38d45a52-e0f8-4db0-92ad-1fc852703e69` — the companion app uses it to address this watchapp on the PebbleKit channel.
 
@@ -30,16 +30,23 @@ Three modes, chosen per query (**Search type**):
 - **Artist Radio** — a radio mix seeded from the matching artist.
 - **Song Radio** — a radio mix seeded from the matching song.
 
+Under Symfonium the modes are **Song / Album / Artist** instead — Song Radio has no counterpart in a fixed library.
+
+**Results** (Advanced) sets how many matches come back: `5`, `10`, or **`Deep`**. Deep is offered only on Symfonium with the Bespoke UI, the two conditions under which it can be served — and the name is literal rather than aspirational: Symfonium's search returns a fixed 15 songs however broad the query (its own debug log shows it matching 4,631 rows and truncating to 15), and it ignores every pagination hint. What the companion does instead is walk the albums the same search matched, which browse *does* allow, roughly tripling the songs a query reaches — about 40 in practice.
+
+Deep holds a **sliding window** of that list rather than the whole of it: pages of 12 arrive as the selection nears an edge, the window slides once it is full, and scrolling back up fetches the earlier page again. The scrollbar is drawn against the true total, so it reads as position in the whole result set rather than in the rows the watch is holding. One page is in flight at a time, and a page that never arrives is released after six seconds so the list can ask again instead of sitting there loading forever.
+
 Two input methods (**Input mode**):
 
 - **Voice search** (default) — Pebble dictation.
-- **Keyboard** — on-watch text entry. **Grid** (a 3×3 swipe keyboard, `lib/grid_keyboard/`, self-contained) on the Time 2, **Classic** otherwise. The keyboard option is hidden until Advanced is unlocked.
+- **Keyboard** — on-watch text entry, in two styles over one 3×3 keypad. **Grid** (also packaged standalone as `lib/grid_keyboard/`) taps for a key's middle character and swipes toward a neighbouring key for the outer two. **T9** lays the letters out as a phone did (`abc` on 2 through `wxyz` on 9, space and 0 on the free 1 key) and taps a key repeatedly to cycle its characters, holds a key for the number printed on it, and offers a punctuation screen in place of a number pad. Both type by touch, so both want the Time 2's panel; the buttons are the same on each (UP mode, DOWN delete, BACK leave), except that T9 has no character to type with SELECT and searches with it. The keyboard option is hidden until Advanced is unlocked.
 
 ## Library
 
 | Section | Contents |
 |---|---|
-| **Recently Played** | Playback history (size set by **History**, in songs). |
+| **Recently Played** | Playback history (size set by **History**, in songs). Under Symfonium it reads a "recently played" smart playlist if one exists, falling back to songs expanded from recently played albums. |
+| **Most Played** | Symfonium only: reads a "most played" smart playlist from Symfonium; hidden otherwise. |
 | **Cached Music** | Tracks cached on the phone, playable without re-resolving. |
 | **Favorites** | Tracks starred from Now Playing. |
 | **Playlists** | Playlists created/managed in the companion app. |
@@ -68,10 +75,14 @@ Route changes carry a monotonic **route epoch**, so a stale route message from e
 
 ## Appearance
 
-- **Bespoke UI** toggle — the custom dreamwave layout vs. the stock system-menu look. App-wide.
-- **Theme** — Default, Dreamwave Teal, Electric Purple, Sunset, Mono, and **Arcade**.
+- **Bespoke UI** toggle — the custom music-pbl layout vs. the stock system-menu look. App-wide.
+- **Theme** — **Default Dark**, **Default Light**, Jazzberry, Dreamwave Teal, Electric Purple, Sunset, Mono, and **Arcade**.
 
-  Under the bespoke UI every theme paints a colored ground — a deep tone of its own hue
+  The two **Default** themes are the neutral pair, and the app starts on Default Dark. They are the only themes that do not paint a ground in a hue of their own: the ground is black or white, and the one accent — a muted indigo — is deliberately quiet, so a selected row reads as "this row" instead of announcing itself. They are siblings, identical apart from the inverted ground. Under the *stock* UI they look the same as each other, because the system MenuLayer paints its own white background and Default Dark cannot bring a black ground across without stranding white text on white — the same accommodation Mono already makes.
+
+  **Jazzberry** is the theme that used to be called Default. Its colors are unchanged; the name is the ground it always used (`GColorJazzberryJam`) finally saying so.
+
+  Under the bespoke UI every *other* theme paints a colored ground — a deep tone of its own hue
   — with bright ink on top, and keeps its familiar accent for fills. Contrast picked the
   values: a mid-tone accent used as *text* on white was under 3:1 (Tiffany Blue 2.9,
   Sunset Orange 3.2), which is why the old secondary text was so hard to read; every
@@ -79,7 +90,9 @@ Route changes carry a monotonic **route epoch**, so a stale route message from e
 
   | Theme | ground | accent |
   |---|---|---|
-  | Default | `#AA0055` | `#FF55FF` |
+  | Default Dark | black | `#5555AA` |
+  | Default Light | white | `#5555AA` |
+  | Jazzberry | `#AA0055` | `#FF55FF` |
   | Dreamwave Teal | `#005555` | `#00AAAA` |
   | Electric Purple | `#550055` | `#AA55AA` |
   | Sunset | `#AA0000` | `#FF5555` |
@@ -124,7 +137,7 @@ way.
 
 | Group | Item | Values |
 |---|---|---|
-| INTERFACE | Keyboard | Grid / Classic |
+| INTERFACE | Keyboard | Grid / T9 |
 | | Bespoke UI | On / Off |
 | | Theme | theme name |
 | | Home style | Kiwi / Unicorn — stock UI only |
